@@ -7,9 +7,13 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
-const Debug = false
+const (
+	Debug             = false
+	CONSENSUS_TIMEOUT = 200 // ms
+)
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug {
@@ -18,11 +22,15 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	return
 }
 
-
 type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
+	Operation string
+	Key       string
+	Value     string
+	ClientId  int64
+	RequestId int
 }
 
 type KVServer struct {
@@ -35,15 +43,141 @@ type KVServer struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
+	kvDB          map[string]string
+	waitApplyCh   map[int]chan Op
+	lastRequestId map[int64]int
+
+	lastIncludeIndex int
 }
 
+func (kv *KVServer) getWaitChannel(raftIndex int) chan Op {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	channelForRaftIndex, exist := kv.waitApplyCh[raftIndex]
+	if !exist {
+		kv.waitApplyCh[raftIndex] = make(chan Op, 1)
+		channelForRaftIndex = kv.waitApplyCh[raftIndex]
+	}
+	//fmt.Printf("%v: getWaitChannel raftIndex=%v exist=%v\n", kv.me, raftIndex, exist)
+	return channelForRaftIndex
+}
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
+	if kv.killed() {
+		reply.Err = ErrWrongLeader
+		return
+	}
+
+	_, ifLeader := kv.rf.GetState()
+	if !ifLeader {
+		reply.Err = ErrWrongLeader
+		//fmt.Printf("KVServer:%v Get GetState=not leader\n", kv.me)
+		return
+	}
+
+	op := Op{
+		"Get",
+		args.Key,
+		"",
+		args.ClientId,
+		args.RequestId,
+	}
+	raftIndex, _, _ := kv.rf.Start(op)
+
+	channelForRaftIndex := kv.getWaitChannel(raftIndex)
+	//fmt.Printf("KVServer:%v Get Start key=%v value=%v\n", kv.me, op.Key, op.Value)
+	select {
+	case <-time.After(time.Millisecond * CONSENSUS_TIMEOUT):
+		//fmt.Printf("KVServer:%v Get timeout key=%v value=%v\n", kv.me, op.Key, op.Value)
+		_, ifLeader := kv.rf.GetState()
+		if kv.ifRequestDuplicate(op.ClientId, op.RequestId) && ifLeader {
+			value, exist := kv.ExecuteGetOpOnKVDB(op)
+			if exist {
+				reply.Err = OK
+				reply.Value = value
+				//fmt.Printf("KVServer:%v Get OK key=%v value=%v\n", kv.me, op.Key, op.Value)
+			} else {
+				reply.Err = ErrNoKey
+				reply.Value = ""
+			}
+		} else {
+			reply.Err = ErrWrongLeader
+		}
+
+	case raftCommitOp := <-channelForRaftIndex:
+		if raftCommitOp.ClientId == op.ClientId && raftCommitOp.RequestId == op.RequestId {
+			value, exist := kv.ExecuteGetOpOnKVDB(op)
+			if exist {
+				reply.Err = OK
+				reply.Value = value
+				//fmt.Printf("KVServer:%v Get OK key=%v value=%v\n", kv.me, op.Key, op.Value)
+			} else {
+				reply.Err = ErrNoKey
+				reply.Value = ""
+				//fmt.Printf("KVServer:%v Get nokey key=%v value=%v\n", kv.me, op.Key, op.Value)
+			}
+		} else {
+			reply.Err = ErrWrongLeader
+			//fmt.Printf("KVServer:%v Get wrongleader key=%v value=%v\n", kv.me, op.Key, op.Value)
+		}
+	}
+
+	kv.mu.Lock()
+	delete(kv.waitApplyCh, raftIndex)
+	kv.mu.Unlock()
+	return
 }
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
+	if kv.killed() {
+		reply.Err = ErrWrongLeader
+		return
+	}
+
+	_, ifLeader := kv.rf.GetState()
+	if !ifLeader {
+		//fmt.Printf("KVServer:%v PutAppend to incorrect leader\n", kv.me)
+		reply.Err = ErrWrongLeader
+		return
+	}
+
+	op := Op{
+		args.Op,
+		args.Key,
+		args.Value,
+		args.ClientId,
+		args.RequestId,
+	}
+
+	raftIndex, _, _ := kv.rf.Start(op)
+	//fmt.Printf("KVServer:%v PutAppend Start raftIndex=%v key=%v value=%v\n", kv.me, raftIndex, args.Key, args.Value)
+	channelForRaftIndex := kv.getWaitChannel(raftIndex)
+
+	select {
+	case <-time.After(time.Millisecond * CONSENSUS_TIMEOUT):
+		if kv.ifRequestDuplicate(op.ClientId, op.RequestId) {
+			reply.Err = OK
+			//fmt.Printf("KVServer:%v raftIndex=%v duplicate command timeout!!!! key=%v, value=%v\n", kv.me, raftIndex, args.Key, args.Value)
+		} else {
+			//fmt.Printf("KVServer:%v timeout execute!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", kv.me)
+			reply.Err = ErrWrongLeader
+		}
+
+	case raftCommitOp := <-channelForRaftIndex:
+		//fmt.Printf("KVServer:%v raftCommitOp key=%v value=%v raftindex=%v**********\n", kv.me, raftCommitOp.Key, raftCommitOp.Value, raftIndex)
+		if kv.ifRequestDuplicate(op.ClientId, op.RequestId) ||
+			raftCommitOp.ClientId == op.ClientId && raftCommitOp.RequestId == op.RequestId {
+			reply.Err = OK
+		} else {
+			reply.Err = ErrWrongLeader
+		}
+	}
+	kv.mu.Lock()
+	delete(kv.waitApplyCh, raftIndex)
+	kv.mu.Unlock()
+	return
 }
 
 //
@@ -96,6 +230,17 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 
 	// You may need initialization code here.
+	kv.kvDB = make(map[string]string)
+	kv.waitApplyCh = make(map[int]chan Op)
+	kv.lastRequestId = make(map[int64]int)
 
+	//kv.lastIncludeIndex = -1
+
+	snapshot := persister.ReadSnapshot()
+	if len(snapshot) > 0 {
+		kv.ReadSnapshotToInstall(snapshot)
+	}
+
+	go kv.ReadRaftApplyCommandLoop()
 	return kv
 }

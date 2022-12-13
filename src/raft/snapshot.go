@@ -1,0 +1,202 @@
+package raft
+
+import (
+	"fmt"
+	"log"
+)
+
+type InstallSnapshotArgs struct {
+	Term             int
+	LeaderId         int
+	LastIncludeIndex int
+	LastIncludeTerm  int
+	Data             []byte
+	//Done bool
+}
+
+type InstallSnapshotReply struct {
+	Term int
+}
+
+//
+// A service wants to switch to snapshot.  Only do so if Raft hasn't
+// have more recent info since it communicate the snapshot on applyCh.
+//
+func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int, snapshot []byte) bool {
+
+	// Your code here (2D).
+
+	return true
+}
+
+// the service says it has created a snapshot that has
+// all info up to and including index. this means the
+// service no longer needs the log through (and including)
+// that index. Raft should now trim its log as much as possible.
+func (rf *Raft) Snapshot(index int, snapshot []byte) {
+	// Your code here (2D).
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if rf.snapshotIndex >= index || rf.commitIndex < index || rf.log.lastindex() < index {
+		fmt.Printf("todaybug!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!111\n")
+		if rf.log.lastindex() < index {
+			log.Fatalf("%v: Snapshot log lastindex=%v < index=%v\n", rf.me, rf.log.lastindex(), index)
+		}
+		return
+	}
+
+	rf.snapshotTerm = rf.log.entry(index).Term
+	rf.snapshotIndex = index
+	rf.snapshot = snapshot
+
+	//fmt.Printf("%v: snapshot old rfloglen=%v\n", rf.me, len(rf.log.log))
+	tempLog := make([]Entry, rf.log.lastindex()-index+1) // len of log include snapshot
+	copy(tempLog, rf.log.slice(index))
+	rf.log = mkLog(tempLog, index)
+	//fmt.Printf("%v: Snapshot until index:%v, oldlastIncludeIndex:%v, oldlastIncludeTerm:%v temploglen:%v rfloglen:%v\n",
+	//	rf.me, index, rf.snapshotIndex, rf.snapshotTerm, len(tempLog), len(rf.log.log))
+
+	//if index > rf.commitIndex {
+	//	rf.commitIndex = index
+	//	fmt.Printf("111111111111111111111111111\n")
+	//}
+	if index > rf.lastApplied {
+		rf.lastApplied = index
+		fmt.Printf("2222222222222222222222222222\n")
+	}
+	rf.persister.SaveStateAndSnapshot(rf.persistData(), snapshot)
+	//fmt.Printf("%v: snapshot lastincludeIndex:%v lastincludeTerm:%v\n", rf.me, rf.snapshotIndex, rf.snapshotTerm)
+}
+
+// InstallSnapshot RPC Handler
+func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
+	if rf.killed() {
+		return
+	}
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	//fmt.Printf("%v: InstallSnapShot argTerm=%v, currenttime=%v\n", rf.me, args.Term, rf.currentTerm)
+	reply.Term = rf.currentTerm
+	if args.Term < rf.currentTerm {
+		return
+	}
+
+	if args.Term > rf.currentTerm {
+		DPrintf("%v: InstallSnapShot argTerm=%v\n", rf.me, args.Term)
+		rf.newTermL(args.Term)
+		rf.votedFor = args.LeaderId
+		rf.persist()
+		//rf.setElectionTime()
+		//reply.Term = rf.currentTerm
+	}
+
+	if rf.state == Candidate {
+		rf.state = Follower
+	}
+	rf.setElectionTime()
+
+	if args.LastIncludeIndex <= rf.snapshotIndex {
+		//fmt.Printf("%v: InstallSnapShot leadersnapshot:%v peersnapshot:%v\n", rf.me, args.LastIncludeIndex, rf.snapshotIndex)
+		return
+	} /*else {
+		if args.LastIncludeIndex < rf.log.lastindex() {
+			if rf.log.entry(args.LastIncludeIndex).Term != args.LastIncludeTerm {
+				rf.log = mkLog(make([]Entry, 1), args.LastIncludeIndex)
+			} else {
+				index := args.LastIncludeIndex
+				tempLog := make([]Entry, rf.log.lastindex()-index+1)
+				copy(tempLog, rf.log.slice(index))
+				rf.log.index0 = index
+				rf.log.log = tempLog
+			}
+		} else {
+			rf.log = mkLog(make([]Entry, 1), args.LastIncludeIndex)
+		}
+	}
+	*/
+
+	if args.LastIncludeIndex < rf.log.lastindex() &&
+		rf.log.entry(args.LastIncludeIndex).Term == args.LastIncludeTerm {
+		index := args.LastIncludeIndex
+		tempLog := make([]Entry, rf.log.lastindex()-index+1)
+		copy(tempLog, rf.log.slice(index))
+		//fmt.Printf("%v: InstallSnapshot plus followe logs len:%v, log:%v\n", rf.me, len(tempLog), tempLog)
+		rf.log = mkLog(tempLog, index)
+	} else {
+		rf.log = mkLog(make([]Entry, 1), args.LastIncludeIndex)
+		rf.log.entry(args.LastIncludeIndex).Term = args.LastIncludeTerm
+		//fmt.Printf("%v: InstallSnapshot with no followe log\n", rf.me)
+	}
+
+	rf.snapshot = args.Data
+	rf.snapshotIndex = args.LastIncludeIndex
+	rf.snapshotTerm = args.LastIncludeTerm
+
+	rf.waitingSnapshot = args.Data
+	rf.waitingIndex = args.LastIncludeIndex
+	rf.waitingTerm = args.LastIncludeTerm
+
+	index := args.LastIncludeIndex
+	if index > rf.commitIndex {
+		rf.commitIndex = index
+	}
+	if index > rf.lastApplied {
+		rf.lastApplied = index
+	}
+
+	//fmt.Printf("%v: InstallSnapshot end -------- lastincludeterm:%v==%v\n", rf.me, rf.log.entry(index).Term, rf.snapshotTerm)
+	rf.persister.SaveStateAndSnapshot(rf.persistData(), args.Data)
+	rf.signalApplierL()
+}
+
+func (rf *Raft) sendSnapshot(server int) {
+	if rf.state != Leader {
+		return
+	}
+	//fmt.Printf("%v: sendSnapshot !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1\n", rf.me)
+	go func() {
+		rf.mu.Lock()
+		args := &InstallSnapshotArgs{
+			rf.currentTerm,
+			rf.me,
+			rf.snapshotIndex,
+			rf.snapshotTerm,
+			rf.snapshot,
+		}
+		rf.mu.Unlock()
+		//fmt.Printf("%v: sendSnapshot  lastincludeindex:%v lastincludeterm:%v to peer:%v\n", rf.me, rf.snapshotIndex, rf.snapshotTerm, server)
+
+		var reply InstallSnapshotReply
+		ok := rf.peers[server].Call("Raft.InstallSnapshot", args, &reply)
+		if ok {
+			rf.mu.Lock()
+			defer rf.mu.Unlock()
+
+			if rf.state != Leader ||
+				rf.currentTerm != args.Term ||
+				rf.snapshotIndex != args.LastIncludeIndex {
+				//fmt.Printf("%v: sendSnapshot exit1 state=%v currenttime:%v==argsterm:%v snapshotindex:%v argssnapshotindex:%v\n",
+				//	rf.me, rf.state, rf.currentTerm, args.Term, rf.snapshotIndex, args.LastIncludeIndex)
+				return
+			}
+
+			if reply.Term > rf.currentTerm {
+				rf.newTermL(reply.Term)
+				//fmt.Printf("%v: sendSnapshot exit1 replyterm:%v > currenttime:%v\n", rf.me, reply.Term, rf.currentTerm)
+				return
+			}
+
+			if rf.nextIndex[server] < args.LastIncludeIndex+1 {
+				rf.nextIndex[server] = args.LastIncludeIndex + 1
+				//fmt.Printf("%v: sendSnapshot increase nextindex=%v\n", rf.me, rf.nextIndex[server])
+			}
+			if rf.matchIndex[server] < args.LastIncludeIndex {
+				rf.matchIndex[server] = args.LastIncludeIndex
+				//fmt.Printf("%v: sendSnapshot increase matchindex=%v\n", rf.me, rf.matchIndex[server])
+				//rf.advanceCommitL()
+			}
+		}
+	}()
+}

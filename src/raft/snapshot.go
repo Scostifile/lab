@@ -77,6 +77,8 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
+	defer func() { reply.Term = rf.currentTerm }()
+
 	//fmt.Printf("%v: InstallSnapShot argTerm=%v, currenttime=%v\n", rf.me, args.Term, rf.currentTerm)
 	reply.Term = rf.currentTerm
 	if args.Term < rf.currentTerm {

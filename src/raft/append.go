@@ -37,22 +37,26 @@ func (aer *AppendEntriesReply) String() string {
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer func() { reply.Term = rf.currentTerm }()
 
-	reply.Term = rf.currentTerm
-
-	if args.Term > rf.currentTerm {
+	switch {
+	case args.Term > rf.currentTerm:
 		rf.newTermL(args.Term)
 		rf.votedFor = args.LeaderId
 		rf.persist()
 		DPrintf("%v: AppendEntries argsTerm=%v > peercurrentTerm=%v\n", rf.me, args.Term, rf.currentTerm)
-	} else if args.Term < rf.currentTerm {
+	case args.Term < rf.currentTerm:
 		DPrintf("%v: AppendEntries rfTerm=%v\n", rf.me, rf.currentTerm)
+		reply.Success = false
 		return
+	case args.Term == rf.currentTerm:
+		if rf.state == Candidate {
+			rf.state = Follower
+		} else if rf.state == Leader {
+			log.Fatalf("")
+		}
 	}
 
-	if rf.state == Candidate {
-		rf.state = Follower
-	}
 	rf.setElectionTime()
 	reply.Success = false
 	reply.ConflictValid = false

@@ -35,7 +35,7 @@ import (
 )
 
 // ----------------------
-const electionTimeout = 1 * time.Second
+const electionTimeout = 500 * time.Millisecond //1 * time.Second
 
 //150 * time.Millisecond
 // ----------------------

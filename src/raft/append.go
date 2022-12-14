@@ -151,13 +151,13 @@ func (rf *Raft) sendAppendL(peer int, heartbeat bool) {
 		next = rf.log.lastindex() //+ 1
 	}
 
-	if next <= rf.snapshotIndex && rf.snapshotIndex > 0 {
-		//if next <= rf.snapshotIndex {
-		rf.sendSnapshot(peer)
-		//fmt.Printf("%v: sendAppendL next:%v < lastincludeindex:%v, sendSnapshot to %v\n",
-		//	rf.me, next, rf.snapshotIndex, peer)
-		return
-	}
+	//if next <= rf.snapshotIndex && rf.snapshotIndex > 0 {
+	//	//if next <= rf.snapshotIndex {
+	//	rf.sendSnapshot(peer)
+	//	//fmt.Printf("%v: sendAppendL next:%v < lastincludeindex:%v, sendSnapshot to %v\n",
+	//	//	rf.me, next, rf.snapshotIndex, peer)
+	//	return
+	//}
 
 	args := &AppendEntriesArgs{
 		rf.currentTerm,

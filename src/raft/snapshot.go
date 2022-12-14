@@ -39,7 +39,7 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	defer rf.mu.Unlock()
 
 	if rf.snapshotIndex >= index || rf.commitIndex < index || rf.log.lastindex() < index {
-		fmt.Printf("todaybug!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!111\n")
+		//fmt.Printf("todaybug!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!111\n")
 		if rf.log.lastindex() < index {
 			log.Fatalf("%v: Snapshot log lastindex=%v < index=%v\n", rf.me, rf.log.lastindex(), index)
 		}
@@ -76,48 +76,39 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	}
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer func() {
+		reply.Term = rf.currentTerm
+		if args.LastIncludeIndex > rf.commitIndex {
+			rf.commitIndex = args.LastIncludeIndex
+		}
+		if args.LastIncludeIndex > rf.lastApplied {
+			rf.lastApplied = args.LastIncludeIndex
+		}
+	}()
 
-	defer func() { reply.Term = rf.currentTerm }()
-
-	//fmt.Printf("%v: InstallSnapShot argTerm=%v, currenttime=%v\n", rf.me, args.Term, rf.currentTerm)
-	reply.Term = rf.currentTerm
-	if args.Term < rf.currentTerm {
+	switch {
+	case args.Term < rf.currentTerm:
 		return
-	}
-
-	if args.Term > rf.currentTerm {
+	case args.Term > rf.currentTerm:
 		DPrintf("%v: InstallSnapShot argTerm=%v\n", rf.me, args.Term)
 		rf.newTermL(args.Term)
 		rf.votedFor = args.LeaderId
 		rf.persist()
-		//rf.setElectionTime()
-		//reply.Term = rf.currentTerm
+	case args.Term == rf.currentTerm:
+		if rf.state == Leader {
+			log.Fatalf("InstallSnapshot Error! Another leader in current term!")
+		} else if rf.state == Candidate {
+			rf.state = Follower
+		}
 	}
 
-	if rf.state == Candidate {
-		rf.state = Follower
-	}
-	rf.setElectionTime()
+	//fmt.Printf("%v: InstallSnapShot argTerm=%v, currenttime=%v\n", rf.me, args.Term, rf.currentTerm)
 
 	if args.LastIncludeIndex <= rf.snapshotIndex {
 		//fmt.Printf("%v: InstallSnapShot leadersnapshot:%v peersnapshot:%v\n", rf.me, args.LastIncludeIndex, rf.snapshotIndex)
 		return
-	} /*else {
-		if args.LastIncludeIndex < rf.log.lastindex() {
-			if rf.log.entry(args.LastIncludeIndex).Term != args.LastIncludeTerm {
-				rf.log = mkLog(make([]Entry, 1), args.LastIncludeIndex)
-			} else {
-				index := args.LastIncludeIndex
-				tempLog := make([]Entry, rf.log.lastindex()-index+1)
-				copy(tempLog, rf.log.slice(index))
-				rf.log.index0 = index
-				rf.log.log = tempLog
-			}
-		} else {
-			rf.log = mkLog(make([]Entry, 1), args.LastIncludeIndex)
-		}
 	}
-	*/
+	rf.setElectionTime()
 
 	if args.LastIncludeIndex < rf.log.lastindex() &&
 		rf.log.entry(args.LastIncludeIndex).Term == args.LastIncludeTerm {
@@ -139,14 +130,6 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	rf.waitingSnapshot = args.Data
 	rf.waitingIndex = args.LastIncludeIndex
 	rf.waitingTerm = args.LastIncludeTerm
-
-	index := args.LastIncludeIndex
-	if index > rf.commitIndex {
-		rf.commitIndex = index
-	}
-	if index > rf.lastApplied {
-		rf.lastApplied = index
-	}
 
 	//fmt.Printf("%v: InstallSnapshot end -------- lastincludeterm:%v==%v\n", rf.me, rf.log.entry(index).Term, rf.snapshotTerm)
 	rf.persister.SaveStateAndSnapshot(rf.persistData(), args.Data)

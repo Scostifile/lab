@@ -2,5 +2,5 @@
 count=1000
     for i in $(seq $count); do
         printf "****************************************\n"
-        go test -run TestSnapshotUnreliableRecover3B
+        go test -run TestSnapshotUnreliable3B
     done

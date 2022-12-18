@@ -143,6 +143,12 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		return
 	}
 
+	//if kv.rf.GetRaftStateSize() > kv.maxraftstate {
+	//	reply.Err = ErrWrongLeader
+	//	fmt.Printf("KVServer:%v raftStateSize is big %v\n", kv.me, kv.rf.GetRaftStateSize())
+	//	return
+	//}
+
 	op := Op{
 		args.Op,
 		args.Key,
@@ -166,10 +172,14 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		}
 
 	case raftCommitOp := <-channelForRaftIndex:
-		//fmt.Printf("KVServer:%v raftCommitOp key=%v value=%v raftindex=%v**********\n", kv.me, raftCommitOp.Key, raftCommitOp.Value, raftIndex)
-		if kv.ifRequestDuplicate(op.ClientId, op.RequestId) ||
-			raftCommitOp.ClientId == op.ClientId && raftCommitOp.RequestId == op.RequestId {
+		//if raftCommitOp.Key == "0" {
+		//	fmt.Printf("KVServer:%v raftCommitOp key=%v value=%v from client:%v raftindex=%v**********\n", kv.me, raftCommitOp.Key, raftCommitOp.Value, raftCommitOp.ClientId, raftIndex)
+		//}
+		if raftCommitOp.ClientId == op.ClientId && raftCommitOp.RequestId == op.RequestId {
 			reply.Err = OK
+			//if raftCommitOp.Key == "0" {
+			//	fmt.Printf("KVServer:%v raftIndex=%v from clinetId=%v---- %v\n", kv.me, raftIndex, op.ClientId, kv.kvDB["0"])
+			//}
 		} else {
 			reply.Err = ErrWrongLeader
 		}
@@ -238,7 +248,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 	snapshot := persister.ReadSnapshot()
 	if len(snapshot) > 0 {
-		kv.ReadSnapshotToInstall(snapshot)
+		kv.ReadSnapshotToInstallL(snapshot)
 	}
 
 	go kv.ReadRaftApplyCommandLoop()

@@ -104,7 +104,10 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 		ck.requestId,
 	}
 	for {
-		//fmt.Printf("Client putappend key=%v value=%v to server:%v goroutine=%v\n", args.Key, args.Value, server, runtime.NumGoroutine())
+		//if key == "0" {
+		//	fmt.Printf("Client:%v putappend key=%v value=%v to server:%v\n", ck.clientId, args.Key, args.Value, server)
+		//}
+
 		reply := PutAppendReply{}
 		ok := ck.servers[server].Call("KVServer.PutAppend", &args, &reply)
 		if !ok || reply.Err == ErrWrongLeader {
@@ -113,7 +116,9 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 			continue
 		}
 		if reply.Err == OK {
-			//fmt.Printf("Clinet PutAppend to server=%v is finish key=%v, value=%v\n", server, key, value)
+			//if key == "0" {
+			//	fmt.Printf("Clinet:%v PutAppend to server=%v is finish key=%v, value=%v\n", ck.clientId, server, key, value)
+			//}
 			ck.recentLeaderId = server
 			return
 		}

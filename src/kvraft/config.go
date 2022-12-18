@@ -272,6 +272,7 @@ func (cfg *config) ShutdownServer(i int) {
 	// pass Make() the last persisted state.
 	if cfg.saved[i] != nil {
 		cfg.saved[i] = cfg.saved[i].Copy()
+		//fmt.Printf("cfg ShutdownServer raftstatesize is %v\n", cfg.saved[i].RaftStateSize())
 	}
 
 	kv := cfg.kvservers[i]
@@ -307,8 +308,10 @@ func (cfg *config) StartServer(i int) {
 	// the last persisted state.
 	if cfg.saved[i] != nil {
 		cfg.saved[i] = cfg.saved[i].Copy()
+		//fmt.Printf("cfg StartServer raftstatesize by choice 1 is %v\n", cfg.saved[i].RaftStateSize())
 	} else {
 		cfg.saved[i] = raft.MakePersister()
+		//fmt.Printf("cfg StartServer raftstatesize by choice 2 is %v\n", cfg.saved[i].RaftStateSize())
 	}
 	cfg.mu.Unlock()
 

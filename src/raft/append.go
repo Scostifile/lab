@@ -39,11 +39,14 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	defer rf.mu.Unlock()
 	defer func() { reply.Term = rf.currentTerm }()
 
+	//if rf.GetRaftStateSize() > 8000 {
+	//	fmt.Printf("%v: AppendEntries log size before is too big :%v lastAppliedIndex=%v commitIndex=%v logstartIndex:%v loglastIndex:%v\n",
+	//		rf.me, rf.GetRaftStateSize(), rf.lastApplied, rf.commitIndex, rf.log.start(), rf.log.lastindex())
+	//}
+
 	switch {
 	case args.Term > rf.currentTerm:
 		rf.newTermL(args.Term)
-		rf.votedFor = args.LeaderId
-		rf.persist()
 		DPrintf("%v: AppendEntries argsTerm=%v > peercurrentTerm=%v\n", rf.me, args.Term, rf.currentTerm)
 	case args.Term < rf.currentTerm:
 		DPrintf("%v: AppendEntries rfTerm=%v\n", rf.me, rf.currentTerm)
@@ -53,7 +56,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		if rf.state == Candidate {
 			rf.state = Follower
 		} else if rf.state == Leader {
-			log.Fatalf("")
+			log.Fatalf("AppendEntries Error! Another leader in current term!")
 		}
 	}
 
@@ -67,7 +70,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if args.PrevLogIndex < rf.snapshotIndex {
 		//fmt.Printf("%v: AppendEntries from leader:%v Term:%v peersnapshotindex:%v > leaderprevlogindex:%v\n", rf.me, args.LeaderId, rf.currentTerm, rf.snapshotIndex, args.PrevLogIndex)
 		reply.ConflictValid = true
-		//reply.ConflictFirst = rf.snapshotIndex + 1
 		reply.ConflictFirst = rf.log.lastindex() + 1
 		return
 	}
@@ -77,7 +79,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		//fmt.Printf("%v: AppendEntries rule2 lastindex:%v, previndex:%v\n", rf.me, rf.log.lastindex(), args.PrevLogIndex)
 		reply.ConflictValid = true
 		reply.ConflictFirst = rf.log.lastindex() + 1
-		//reply.ConflictTerm = -1
 		return
 	}
 
@@ -87,12 +88,12 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		//	rf.me, rf.log.entry(args.PrevLogIndex).Term, args.PrevLogTerm, args.PrevLogIndex, rf.log.start())
 		reply.ConflictValid = true
 		reply.ConflictTerm = rf.log.entry(args.PrevLogIndex).Term
-		for index := args.PrevLogIndex; index >= rf.log.start(); index-- {
-			if rf.log.entry(index).Term != reply.ConflictTerm {
-				reply.ConflictFirst = index + 1
-				break
-			}
+		conflictIndex := args.PrevLogIndex
+		for conflictIndex >= rf.log.start() &&
+			rf.log.entry(conflictIndex).Term == reply.ConflictTerm {
+			conflictIndex--
 		}
+		reply.ConflictFirst = conflictIndex + 1
 		return
 	}
 
@@ -125,10 +126,22 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			DPrintf("%v: Commit to %v\n", rf.me, lastNew)
 			rf.commitIndex = lastNew
 		}
+		//if rf.GetRaftStateSize() > 8000 {
+		//	fmt.Printf("%v: AppendEntries log size commit is too big :%v!!!!!!!!!!!!!!!! lastAppliedIndex=%v commitIndex=%v logstartIndex:%v loglastIndex:%v\n",
+		//		rf.me, rf.GetRaftStateSize(), rf.lastApplied, rf.commitIndex, rf.log.start(), rf.log.lastindex())
+		//}
 		rf.signalApplierL()
 	}
 	//fmt.Printf("%v AppendEntries receive from server=%v goroutine=%v\n", rf.me, args.LeaderId, runtime.NumGoroutine())
-	//rf.persist()
+	//if rf.lastApplied < rf.log.start() {
+	//	fmt.Printf("%v: AppendEntries  lastAppliedIndex=%v < logstartIndex:%v ???????!!!!!!!! commitIndex=%v loglasttIndex:%v raftStateSize:%v\n",
+	//		rf.me, rf.lastApplied, rf.log.start(), rf.commitIndex, rf.log.lastindex(), rf.GetRaftStateSize())
+	//}
+
+	//if rf.GetRaftStateSize() > 8000 {
+	//	fmt.Printf("%v: AppendEntries log size after is too big :%v lastAppliedIndex=%v commitIndex=%v logstartIndex:%v loglastIndex:%v\n",
+	//		rf.me, rf.GetRaftStateSize(), rf.lastApplied, rf.commitIndex, rf.log.start(), rf.log.lastindex())
+	//}
 }
 
 func (rf *Raft) sendAppendsL(heartbeat bool) {
@@ -155,13 +168,13 @@ func (rf *Raft) sendAppendL(peer int, heartbeat bool) {
 		next = rf.log.lastindex() //+ 1
 	}
 
-	//if next <= rf.snapshotIndex && rf.snapshotIndex > 0 {
-	//	//if next <= rf.snapshotIndex {
-	//	rf.sendSnapshot(peer)
-	//	//fmt.Printf("%v: sendAppendL next:%v < lastincludeindex:%v, sendSnapshot to %v\n",
-	//	//	rf.me, next, rf.snapshotIndex, peer)
-	//	return
-	//}
+	if next <= rf.snapshotIndex && rf.snapshotIndex > 0 {
+		//if next <= rf.snapshotIndex {
+		rf.sendSnapshot(peer)
+		//fmt.Printf("%v: sendAppendL next:%v < lastincludeindex:%v, sendSnapshot to %v\n",
+		//	rf.me, next, rf.snapshotIndex, peer)
+		return
+	}
 
 	args := &AppendEntriesArgs{
 		rf.currentTerm,
@@ -218,7 +231,7 @@ func (rf *Raft) advanceCommitL() {
 	//	}
 	//}
 
-	matchLen := len(rf.matchIndex)
+	matchLen := len(rf.peers)
 	tempMatchIndex := make([]int, matchLen-1)
 	j := 0
 	for i := 0; i < matchLen; i++ {
@@ -228,7 +241,7 @@ func (rf *Raft) advanceCommitL() {
 		}
 	}
 	sort.Ints(tempMatchIndex)
-	medianIndex := tempMatchIndex[(matchLen-1)/2]
+	medianIndex := tempMatchIndex[matchLen/2]
 	//fmt.Printf("%v: advanceCommit tempMatchIndex:%v medianIndex:%v\n", rf.me, tempMatchIndex, medianIndex)
 	if medianIndex > rf.commitIndex && rf.log.entry(medianIndex).Term == rf.currentTerm {
 		rf.commitIndex = medianIndex
@@ -248,6 +261,8 @@ func (rf *Raft) processConflictTermL(
 	//	DPrintf("%v: processConflictTermL: reset nextIndex %v to %v\n",
 	//		rf.me, peer, reply.ConflictFirst)
 	//	rf.nextIndex[peer] = reply.ConflictFirst
+	//	fmt.Printf("%v: processConflictTermL: reset nextIndex %v to %v\n",
+	//		rf.me, peer, reply.ConflictFirst)
 	//} else {
 	//	if rf.nextIndex[peer] > rf.log.lastindex() {
 	//		rf.nextIndex[peer] = rf.log.lastindex()

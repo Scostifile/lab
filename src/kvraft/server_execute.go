@@ -5,28 +5,27 @@ import (
 )
 
 func (kv *KVServer) ReadRaftApplyCommandLoop() {
-
-	for !kv.killed() {
-		message := <-kv.applyCh
-		if message.CommandValid {
-			kv.GetCommandFromRaft(message)
-		}
-		if message.SnapshotValid {
-			kv.GetSnapshotFromRaft(message)
-		}
-	}
-
 	//for !kv.killed() {
-	//	select {
-	//	case message := <-kv.applyCh:
-	//		if message.CommandValid {
-	//			kv.GetCommandFromRaft(message)
-	//		}
-	//		if message.SnapshotValid {
-	//			kv.GetSnapshotFromRaft(message)
-	//		}
+	//	message := <-kv.applyCh
+	//	if message.CommandValid {
+	//		kv.GetCommandFromRaft(message)
+	//	}
+	//	if message.SnapshotValid {
+	//		kv.GetSnapshotFromRaft(message)
 	//	}
 	//}
+
+	for !kv.killed() {
+		select {
+		case message := <-kv.applyCh:
+			if message.CommandValid {
+				kv.GetCommandFromRaft(message)
+			}
+			if message.SnapshotValid {
+				kv.GetSnapshotFromRaft(message)
+			}
+		}
+	}
 }
 
 func (kv *KVServer) GetCommandFromRaft(message raft.ApplyMsg) {
@@ -46,7 +45,6 @@ func (kv *KVServer) GetCommandFromRaft(message raft.ApplyMsg) {
 	}
 
 	if kv.maxraftstate != -1 {
-		//fmt.Printf("KVServer ifNeedToSendSnapshotCommand !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n")
 		kv.ifNeedToSendSnapshotCommand(message.CommandIndex, 9)
 	}
 
@@ -88,13 +86,19 @@ func (kv *KVServer) ExecuteAppendOpOnKVDB(op Op) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 
+	//if op.Key == "0" {
+	//	fmt.Printf("KVServer:%v ExecuteAppendOpOnKVDB data{key=%v value=%v} will be wrietten in DB:%v\n", kv.me, op.Key, op.Value, kv.kvDB["0"])
+	//}
 	value, exist := kv.kvDB[op.Key]
 	if exist {
 		kv.kvDB[op.Key] = value + op.Value
 	} else {
 		kv.kvDB[op.Key] = op.Value
 	}
-	//fmt.Printf("KVServer:%v ExecuteAppendOpOnKVDB data{key=%v value=%v} will be wrietten in DB\n", kv.me, op.Key, op.Value)
+	//if op.Key == "0" {
+	//	fmt.Printf("KVServer:%v ExecuteAppendOpOnKVDB data{key=%v value=%v} has been wrietten in DB:%v\n", kv.me, op.Key, op.Value, kv.kvDB["0"])
+	//}
+
 	kv.lastRequestId[op.ClientId] = op.RequestId
 }
 

@@ -38,13 +38,8 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	if rf.persister.RaftStateSize() > 8000 {
-		fmt.Printf("%v: Snapshot before size is %v\n", rf.me, rf.persister.RaftStateSize())
-	}
-
 	if rf.snapshotIndex >= index || rf.commitIndex < index || rf.log.lastindex() < index {
-		//fmt.Printf("todaybug!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!111\n")
-		if rf.log.lastindex() < index {
+		if rf.log.lastindex() < index || rf.commitIndex < index {
 			log.Fatalf("%v: Snapshot log lastindex=%v < index=%v\n", rf.me, rf.log.lastindex(), index)
 		}
 		return
@@ -71,14 +66,6 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	}
 	rf.persister.SaveStateAndSnapshot(rf.persistData(), snapshot)
 	//fmt.Printf("%v: snapshot lastincludeIndex:%v lastincludeTerm:%v\n", rf.me, rf.snapshotIndex, rf.snapshotTerm)
-	if rf.persister.RaftStateSize() > 8000 {
-		fmt.Printf("%v: Snapshot after size is %v\n", rf.me, rf.persister.RaftStateSize())
-	}
-
-	if rf.lastApplied < rf.log.start() {
-		fmt.Printf("%v: Snapshot !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! lastAppliedIndex=%v < logstartIndex:%v commitIndex=%v loglasttIndex:%v \n",
-			rf.me, rf.lastApplied, rf.log.start(), rf.commitIndex, rf.log.lastindex())
-	}
 }
 
 // InstallSnapshot RPC Handler
@@ -91,10 +78,6 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	defer func() {
 		reply.Term = rf.currentTerm
 	}()
-
-	if rf.persister.RaftStateSize() > 8000 {
-		fmt.Printf("%v: InstallSnapshot before size is %v\n", rf.me, rf.persister.RaftStateSize())
-	}
 
 	switch {
 	case args.Term < rf.currentTerm:
@@ -116,7 +99,8 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 		//fmt.Printf("%v: InstallSnapShot leadersnapshot:%v peersnapshot:%v\n", rf.me, args.LastIncludeIndex, rf.snapshotIndex)
 		return
 	}
-	rf.setElectionTime()
+	//rf.setElectionTime()
+	rf.resetTimer()
 
 	if args.LastIncludeIndex < rf.log.lastindex() &&
 		rf.log.entry(args.LastIncludeIndex).Term == args.LastIncludeTerm {
@@ -139,17 +123,9 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	rf.waitingIndex = args.LastIncludeIndex
 	rf.waitingTerm = args.LastIncludeTerm
 
-	if args.LastIncludeIndex != rf.log.start() {
-		fmt.Printf("%v: InstallSnapshot argslastIncludeIndex=%v != logstartIndex:%v!!!!!!!!!!!!!!!!!!!!!\n",
-			rf.me, args.LastIncludeIndex, rf.log.start())
-	}
 	//fmt.Printf("%v: InstallSnapshot end -------- lastincludeterm:%v==%v\n", rf.me, rf.log.entry(index).Term, rf.snapshotTerm)
 	rf.persister.SaveStateAndSnapshot(rf.persistData(), args.Data)
 	rf.signalApplierL()
-
-	if rf.persister.RaftStateSize() > 8000 {
-		fmt.Printf("%v: InstallSnapshot after size is %v\n", rf.me, rf.persister.RaftStateSize())
-	}
 
 	if args.LastIncludeIndex > rf.commitIndex {
 		rf.commitIndex = args.LastIncludeIndex
@@ -163,22 +139,18 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	then read a snapshot by leader so that s2's DB becomes {x 0 0 y x 0 1 y}. It causes the log rollback.
 	*/
 	rf.lastApplied = args.LastIncludeIndex
-
-	if rf.lastApplied < rf.log.start() {
-		fmt.Printf("%v: InstallSnapshot after !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! lastAppliedIndex=%v < logstartIndex:%v args.lastIncludeIndex:%v commitIndex=%v loglasttIndex:%v \n",
-			rf.me, rf.lastApplied, rf.log.start(), args.LastIncludeIndex, rf.commitIndex, rf.log.lastindex())
-	}
 }
 
-func (rf *Raft) sendSnapshot(server int) {
-	if rf.state != Leader {
+func (rf *Raft) sendSnapshot(server int, currentTerm int) {
+	if rf.currentTerm != currentTerm || rf.state != Leader {
 		return
 	}
 	//fmt.Printf("%v: sendSnapshot !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1\n", rf.me)
 	go func() {
 		rf.mu.Lock()
 		args := &InstallSnapshotArgs{
-			rf.currentTerm,
+			//rf.currentTerm,
+			currentTerm,
 			rf.me,
 			rf.snapshotIndex,
 			rf.snapshotTerm,
@@ -194,8 +166,8 @@ func (rf *Raft) sendSnapshot(server int) {
 			defer rf.mu.Unlock()
 
 			if rf.state != Leader ||
-				rf.currentTerm != args.Term ||
-				rf.snapshotIndex != args.LastIncludeIndex {
+				rf.currentTerm != args.Term || rf.snapshotIndex != args.LastIncludeIndex {
+
 				//fmt.Printf("%v: sendSnapshot exit1 state=%v currenttime:%v==argsterm:%v snapshotindex:%v argssnapshotindex:%v\n",
 				//	rf.me, rf.state, rf.currentTerm, args.Term, rf.snapshotIndex, args.LastIncludeIndex)
 				return
@@ -204,6 +176,7 @@ func (rf *Raft) sendSnapshot(server int) {
 			if reply.Term > rf.currentTerm {
 				rf.newTermL(reply.Term)
 				//fmt.Printf("%v: sendSnapshot exit1 replyterm:%v > currenttime:%v\n", rf.me, reply.Term, rf.currentTerm)
+				//rf.resetTimer()
 				return
 			}
 

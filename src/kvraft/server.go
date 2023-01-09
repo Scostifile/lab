@@ -4,6 +4,7 @@ import (
 	"6.824/labgob"
 	"6.824/labrpc"
 	"6.824/raft"
+	"fmt"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -12,7 +13,7 @@ import (
 
 const (
 	Debug             = false
-	CONSENSUS_TIMEOUT = 200 // ms
+	CONSENSUS_TIMEOUT = 500 // ms
 )
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
@@ -143,12 +144,6 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		return
 	}
 
-	//if kv.rf.GetRaftStateSize() > kv.maxraftstate {
-	//	reply.Err = ErrWrongLeader
-	//	fmt.Printf("KVServer:%v raftStateSize is big %v\n", kv.me, kv.rf.GetRaftStateSize())
-	//	return
-	//}
-
 	op := Op{
 		args.Op,
 		args.Key,
@@ -165,21 +160,15 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	case <-time.After(time.Millisecond * CONSENSUS_TIMEOUT):
 		if kv.ifRequestDuplicate(op.ClientId, op.RequestId) {
 			reply.Err = OK
-			//fmt.Printf("KVServer:%v raftIndex=%v duplicate command timeout!!!! key=%v, value=%v\n", kv.me, raftIndex, args.Key, args.Value)
+			fmt.Printf("KVServer:%v raftIndex=%v duplicate command timeout!!!! key=%v, value=%v\n", kv.me, raftIndex, args.Key, args.Value)
 		} else {
 			//fmt.Printf("KVServer:%v timeout execute!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", kv.me)
 			reply.Err = ErrWrongLeader
 		}
 
 	case raftCommitOp := <-channelForRaftIndex:
-		//if raftCommitOp.Key == "0" {
-		//	fmt.Printf("KVServer:%v raftCommitOp key=%v value=%v from client:%v raftindex=%v**********\n", kv.me, raftCommitOp.Key, raftCommitOp.Value, raftCommitOp.ClientId, raftIndex)
-		//}
 		if raftCommitOp.ClientId == op.ClientId && raftCommitOp.RequestId == op.RequestId {
 			reply.Err = OK
-			//if raftCommitOp.Key == "0" {
-			//	fmt.Printf("KVServer:%v raftIndex=%v from clinetId=%v---- %v\n", kv.me, raftIndex, op.ClientId, kv.kvDB["0"])
-			//}
 		} else {
 			reply.Err = ErrWrongLeader
 		}

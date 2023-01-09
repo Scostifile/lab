@@ -116,10 +116,8 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 			continue
 		}
 		if reply.Err == OK {
-			//if key == "0" {
-			//	fmt.Printf("Clinet:%v PutAppend to server=%v is finish key=%v, value=%v\n", ck.clientId, server, key, value)
-			//}
 			ck.recentLeaderId = server
+			//fmt.Printf("Clinet:%v PutAppend to server=%v is finish key=%v, value=%v goroutine=%v\n", ck.clientId, server, key, value, runtime.NumGoroutine())
 			return
 		}
 	}

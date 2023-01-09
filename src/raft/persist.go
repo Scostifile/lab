@@ -90,6 +90,7 @@ func (rf *Raft) readPersist(data []byte) {
 		rf.snapshot = rf.persister.ReadSnapshot()
 		rf.log.index0 = lastIncludeIndex
 		rf.snapshotIndex = lastIncludeIndex
+		rf.lastApplied = lastIncludeIndex
 		rf.snapshotTerm = lastIncludeTerm
 	}
 }

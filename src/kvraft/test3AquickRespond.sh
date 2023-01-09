@@ -2,5 +2,5 @@
 count=1000
     for i in $(seq $count); do
         printf "****************************************\n"
-        go test -race
+        go test -run TestSpeed3A -race
     done

@@ -1,9 +1,5 @@
 package shardctrler
 
-import (
-	"fmt"
-)
-
 func ifReachBalanceSize(length int, subNum int, i int) bool {
 	if i < length-subNum {
 		return true
@@ -94,13 +90,13 @@ func (sc *ShardCtrler) MakeMoveConfig(shard int, gid int) *Config {
 		Shards: [10]int{},
 		Groups: map[int][]string{},
 	}
-	for shards, gids := range lastConfig.Shards {
-		tempConfig.Shards[shards] = gids
+	for shardIndex, gidNum := range lastConfig.Shards {
+		tempConfig.Shards[shardIndex] = gidNum
 	}
 	tempConfig.Shards[shard] = gid
 
-	for gids, _servers := range lastConfig.Groups {
-		tempConfig.Groups[gids] = _servers
+	for gidIndex, serverList := range lastConfig.Groups {
+		tempConfig.Groups[gidIndex] = serverList
 	}
 
 	return &tempConfig
@@ -128,7 +124,7 @@ func (sc *ShardCtrler) MakeJoinConfig(servers map[int][]string) *Config {
 	}
 
 	if len(GidToShardNumMap) == 0 {
-		fmt.Printf("%v: MakeJoinConfig GidToShardNumMap=0! tempGroups=%v\n", sc.me, tempGroups)
+		//fmt.Printf("%v: MakeJoinConfig GidToShardNumMap=0! tempGroups=%v\n", sc.me, tempGroups)
 		return &Config{
 			Num:    len(sc.configs),
 			Shards: [10]int{},
@@ -159,7 +155,7 @@ func (sc *ShardCtrler) MakeLeaveConfig(gids []int) *Config {
 		delete(tempGroups, gidLeave)
 	}
 
-	newShard := lastConfig.Shards
+	newShard := lastConfig.Shards // just shallow copy
 	GidToShardNumMap := make(map[int]int)
 	for gid := range tempGroups {
 		if !ifLeaveSet[gid] {
@@ -176,7 +172,7 @@ func (sc *ShardCtrler) MakeLeaveConfig(gids []int) *Config {
 		}
 	}
 	if len(GidToShardNumMap) == 0 {
-		fmt.Printf("%v: MakeLeaveConfig GidToShardNumMap=0! tempGroups=%v\n", sc.me, tempGroups)
+		//fmt.Printf("%v: MakeLeaveConfig GidToShardNumMap=0! tempGroups=%v\n", sc.me, tempGroups)
 		return &Config{
 			Num:    len(sc.configs),
 			Shards: [10]int{},

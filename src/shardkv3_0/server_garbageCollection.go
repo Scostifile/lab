@@ -1,71 +1,72 @@
-package shardkv2_0
+package shardkv3_0
 
-import (
-	"strconv"
-	"sync"
-)
+import "sync"
 
-func (kv *ShardKV) GarbageCollection(args *MigrateArgs, reply *MigrateReply) {
-	reply.Err = ErrWrongLeader
-	if _, isLeader := kv.rf.GetState(); !isLeader {
-		return
-	}
-	kv.mu.Lock()
-	if _, ok := kv.configNum2migrateOutShardsDB[args.ConfigNum]; !ok {
-		kv.mu.Unlock()
-		return
-	}
-	if _, ok := kv.configNum2migrateOutShardsDB[args.ConfigNum][args.Shard]; !ok {
-		kv.mu.Unlock()
-		return
-	}
-	gcOp := Op{"GC", strconv.Itoa(args.ConfigNum), "", Nrand(), args.Shard}
-	kv.mu.Unlock()
-	reply.Err, _ = kv.raftStartOperation(gcOp)
-}
-
-func (kv *ShardKV) tryGC() {
-	_, isLeader := kv.rf.GetState()
-	kv.mu.Lock()
-	if !isLeader || len(kv.garbage) == 0 {
-		kv.mu.Unlock()
-		return
-	}
-	var wait sync.WaitGroup
-	for cfgNum, shards := range kv.garbage {
-		cfg := kv.configMap[cfgNum]
-		for shard := range shards {
-			wait.Add(1)
-			go func(shard int, cfgNum int) {
-				defer wait.Done()
-				args := MigrateArgs{shard, cfgNum}
-				gid := cfg.Shards[shard]
-				for _, server := range cfg.Groups[gid] {
-					srv := kv.make_end(server)
-					reply := MigrateReply{}
-					if ok := srv.Call("ShardKV.GarbageCollection", &args, &reply); ok && reply.Err == OK {
-						kv.mu.Lock()
-						delete(kv.garbage[cfgNum], shard)
-						if len(kv.garbage[cfgNum]) == 0 {
-							delete(kv.garbage, cfgNum)
-						}
-						kv.mu.Unlock()
-					}
+func (kv *ShardKV) gcAction() {
+	kv.mu.RLock()
+	gid2shardIDs := kv.getShardIDsByStatus(GCing)
+	var wg sync.WaitGroup
+	for gid, shardIDs := range gid2shardIDs {
+		DPrintf("{Node %v}{Group %v} starts a GCTask to delete shards %v in group %v when config is %v", kv.rf.Me(), kv.gid, shardIDs, gid, kv.currentConfig)
+		wg.Add(1)
+		go func(servers []string, configNum int, shardIDs []int) {
+			defer wg.Done()
+			gcTaskRequest := ShardOperationRequest{configNum, shardIDs}
+			for _, server := range servers {
+				var gcTaskResponse ShardOperationResponse
+				srv := kv.makeEnd(server)
+				if srv.Call("ShardKV.DeleteShardsData", &gcTaskRequest, &gcTaskResponse) && gcTaskResponse.Err == OK {
+					DPrintf("{Node %v}{Group %v} deletes shards %v in remote group successfully when currentConfigNum is %v", kv.rf.Me(), kv.gid, shardIDs, configNum)
+					kv.Execute(NewDeleteShardsCommand(&gcTaskRequest), &CommandResponse{})
 				}
-			}(shard, cfgNum)
-		}
+			}
+		}(kv.lastConfig.Groups[gid], kv.currentConfig.Num, shardIDs)
 	}
-	kv.mu.Unlock()
-	wait.Wait()
+	kv.mu.RUnlock()
+	wg.Wait()
 }
 
-func (kv *ShardKV) garbageCollectionProcess(cfgNum int, shard int) {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
-	if _, exist := kv.configNum2migrateOutShardsDB[cfgNum]; exist {
-		delete(kv.configNum2migrateOutShardsDB[cfgNum], shard)
-		if len(kv.configNum2migrateOutShardsDB[cfgNum]) == 0 {
-			delete(kv.configNum2migrateOutShardsDB, cfgNum)
-		}
+func (kv *ShardKV) DeleteShardsData(request *ShardOperationRequest, response *ShardOperationResponse) {
+	// only delete shards when role is leader
+	if _, isLeader := kv.rf.GetState(); !isLeader {
+		response.Err = ErrWrongLeader
+		return
 	}
+
+	defer DPrintf("{Node %v}{Group %v} processes GCTaskRequest %v with response %v", kv.rf.Me(), kv.gid, request, response)
+
+	kv.mu.RLock()
+	if kv.currentConfig.Num > request.ConfigNum {
+		DPrintf("{Node %v}{Group %v}'s encounters duplicated shards deletion %v when currentConfig is %v", kv.rf.Me(), kv.gid, request, kv.currentConfig)
+		response.Err = OK
+		kv.mu.RUnlock()
+		return
+	}
+	kv.mu.RUnlock()
+
+	var commandResponse CommandResponse
+	kv.Execute(NewDeleteShardsCommand(request), &commandResponse)
+
+	response.Err = commandResponse.Err
+}
+
+func (kv *ShardKV) applyDeleteShards(shardsInfo *ShardOperationRequest) *CommandResponse {
+	if shardsInfo.ConfigNum == kv.currentConfig.Num {
+		DPrintf("{Node %v}{Group %v}'s shards status are %v before accepting shards deletion %v when currentConfig is %v", kv.rf.Me(), kv.gid, kv.getShardStatus(), shardsInfo, kv.currentConfig)
+		for _, shardId := range shardsInfo.ShardIDs {
+			shard := kv.stateMachines[shardId]
+			if shard.Status == GCing {
+				shard.Status = Serving
+			} else if shard.Status == BePulling {
+				kv.stateMachines[shardId] = NewShard()
+			} else {
+				DPrintf("{Node %v}{Group %v} encounters duplicated shards deletion %v when currentConfig is %v", kv.rf.Me(), kv.gid, shardsInfo, kv.currentConfig)
+				break
+			}
+		}
+		DPrintf("{Node %v}{Group %v}'s shards status are %v after accepting shards deletion %v when currentConfig is %v", kv.rf.Me(), kv.gid, kv.getShardStatus(), shardsInfo, kv.currentConfig)
+		return &CommandResponse{OK, ""}
+	}
+	DPrintf("{Node %v}{Group %v}'s encounters duplicated shards deletion %v when currentConfig is %v", kv.rf.Me(), kv.gid, shardsInfo, kv.currentConfig)
+	return &CommandResponse{OK, ""}
 }

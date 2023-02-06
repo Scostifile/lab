@@ -1,4 +1,4 @@
-package shardkv
+package shardkv3_2
 
 //
 // Sharded key/value server.
@@ -9,68 +9,72 @@ package shardkv
 // You will have to modify these definitions.
 //
 
-type ShardStatus uint8
-
 const (
-	OK             = "OK"
-	ErrNoKey       = "ErrNoKey"
-	ErrWrongGroup  = "ErrWrongGroup"
-	ErrWrongLeader = "ErrWrongLeader"
-	ErrConfigNum   = "ErrConfigNum"
-)
+	OK                        = "OK"
+	ErrNoKey                  = "ErrNoKey"
+	ErrWrongGroup             = "ErrWrongGroup"
+	ErrWrongLeader            = "ErrWrongLeader"
+	ErrTimeout                = "ErrTimeout"
+	ErrWaitShardData          = "ErrWaitShardData "         // 等待分区数据
+	ErrWaitTargetUpdateConfig = "ErrWaitTargetUpdateConfig" // 等待对方更新配置
+	ErrWaitDelete             = "ErrWaitDelete"
+	ErrShardStatus            = "ErrShardStatus"
+	ErrUnexpectedNode         = "ErrUnexpectedNode"
+	ErrOldRequest             = "ErrOldRequest" // 未出现
+	ErrLogFull                = "ErrLogFull"    // 未用到
 
-const (
-	Normal ShardStatus = iota
-	Pulling
-	BePulling
-	GCing
 )
 
 type Err string
 
-type ShardComponent struct {
-	ShardIndex      int
-	KVDBOfShard     map[string]string
-	ClientRequestId map[int64]int
-}
-
-type MigrateShardArgs struct {
-	MigrateData []ShardComponent
-	ConfigNum   int
-}
-
-type MigrateShardReply struct {
-	Err       Err
-	ConfigMum int
-}
-
 // Put or Append
 type PutAppendArgs struct {
-	// You'll have to add definitions here.
 	Key   string
 	Value string
 	Op    string // "Put" or "Append"
-	// You'll have to add definitions here.
-	// Field names must start with capital letters,
-	// otherwise RPC will break.
-	ClientId  int64
-	RequestId int
-	ConfigNum int
+	// 附带client id与序列号
+	ClientId    int64
+	SequenceNum int64
 }
 
 type PutAppendReply struct {
-	Err Err
+	Status Err
 }
 
 type GetArgs struct {
 	Key string
-	// You'll have to add definitions here.
-	ClientId  int64
-	RequestId int
-	ConfigNum int
+	// 附带client id与序列号
+	ClientId    int64
+	SequenceNum int64
 }
 
 type GetReply struct {
-	Err   Err
-	Value string
+	Status Err
+	Value  string
+}
+
+type ReqResult struct { // 命令执行返回
+	SequenceNum int64  // 命令序列号
+	Status      Err    // 命令执行状态
+	Value       string // 命令执行结果
+}
+
+type MigrateArgs struct { // 分区数据迁移参数
+	ConfigNum int // 请求者配置号
+	GID       int // 请求者ID
+	Shard     int // 请求分区号
+}
+
+type MigrateReply struct { // 分区数据迁移返回
+	Status     Err                 // 返回状态
+	KVData     map[string]string   // 分区数据
+	ClintCache map[int64]ReqResult // 客户端最新结果
+}
+
+type DeleteArgs struct { // 删除分区参数
+	ConfigNum           int   // 请求者配置号
+	MigrateSuccessShard []int // 请求者拥有的分区号
+}
+
+type DeleteReply struct { // 删除分区返回
 }

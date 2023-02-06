@@ -2,5 +2,5 @@
 count=100
     for i in $(seq $count); do
         printf "****************************************\n"
-        go test -race
+        go test -run TestChallenge1Delete -race
     done

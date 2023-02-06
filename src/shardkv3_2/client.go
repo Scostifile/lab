@@ -1,4 +1,4 @@
-package shardkv
+package shardkv3_2
 
 //
 // client code to talk to a sharded key/value service.
@@ -9,12 +9,14 @@ package shardkv
 //
 
 import (
+	"crypto/rand"
+	"math/big"
+	"sync/atomic"
+	"time"
+
 	"6.824/labrpc"
+	"6.824/shardctrler"
 )
-import "crypto/rand"
-import "math/big"
-import "6.824/shardctrler"
-import "time"
 
 // which shard is a key in?
 // please use this function,
@@ -40,9 +42,8 @@ type Clerk struct {
 	config   shardctrler.Config
 	make_end func(string) *labrpc.ClientEnd
 	// You will have to modify this struct.
-	clientId              int64
-	requestId             int
-	gid2RecentLeaderIdMap map[int]int
+	clientId      int64 // 随机生成的客户端ID
+	currentSeqNum int64 // 当前序列号
 }
 
 // the tester calls MakeClerk.
@@ -57,10 +58,8 @@ func MakeClerk(ctrlers []*labrpc.ClientEnd, make_end func(string) *labrpc.Client
 	ck.sm = shardctrler.MakeClerk(ctrlers)
 	ck.make_end = make_end
 	// You'll have to add code here.
-	ck.clientId = nrand()
-	ck.requestId = 0
-	ck.gid2RecentLeaderIdMap = make(map[int]int)
-	ck.config = ck.sm.Query(-1)
+	ck.clientId = nrand() // 生成随机的ID
+	ck.currentSeqNum = 1
 	return ck
 }
 
@@ -69,64 +68,27 @@ func MakeClerk(ctrlers []*labrpc.ClientEnd, make_end func(string) *labrpc.Client
 // keeps trying forever in the face of all other errors.
 // You will have to modify this function.
 func (ck *Clerk) Get(key string) string {
-	//args := GetArgs{}
-	//args.Key = key
-	//
-	//for {
-	//	shard := key2shard(key)
-	//	gid := ck.config.Shards[shard]
-	//	if servers, ok := ck.config.Groups[gid]; ok {
-	//		// try each server for the shard.
-	//		for si := 0; si < len(servers); si++ {
-	//			srv := ck.make_end(servers[si])
-	//			var reply GetReply
-	//			ok := srv.Call("ShardKV.Get", &args, &reply)
-	//			if ok && (reply.Err == OK || reply.Err == ErrNoKey) {
-	//				return reply.Value
-	//			}
-	//			if ok && (reply.Err == ErrWrongGroup) {
-	//				break
-	//			}
-	//			// ... not ok, or ErrWrongLeader
-	//		}
-	//	}
-	//	time.Sleep(100 * time.Millisecond)
-	//	// ask controler for the latest configuration.
-	//	ck.config = ck.sm.Query(-1)
-	//}
-	ck.requestId++
-
+	args := GetArgs{Key: key, ClientId: ck.clientId, SequenceNum: atomic.AddInt64(&ck.currentSeqNum, 1)}
 	for {
-		args := GetArgs{
-			Key:       key,
-			ClientId:  ck.clientId,
-			RequestId: ck.requestId,
-			ConfigNum: ck.config.Num,
-		}
 		shard := key2shard(key)
-		if gid := ck.config.Shards[shard]; gid != 0 {
-			leaderId := ck.gid2RecentLeaderIdMap[gid]
-			oldLeaderId := leaderId
-			if servers, ok := ck.config.Groups[gid]; ok {
-				for {
-					srv := ck.make_end(servers[leaderId])
-					var reply GetReply
-					ok := srv.Call("ShardKV.Get", &args, &reply)
-					if ok && (reply.Err == OK || reply.Err == ErrNoKey) {
-						ck.gid2RecentLeaderIdMap[gid] = leaderId
-						return reply.Value
-					}
-					if ok && (reply.Err == ErrWrongGroup) {
-						break
-					}
-					leaderId = (leaderId + 1) % len(servers)
-					if oldLeaderId == leaderId {
-						break
-					}
+		gid := ck.config.Shards[shard]
+		if servers, ok := ck.config.Groups[gid]; ok {
+			// try each server for the shard.
+			for si := 0; si < len(servers); si++ {
+				srv := ck.make_end(servers[si])
+				var reply GetReply
+				ok := srv.Call("ShardKV.Get", &args, &reply)
+				if ok && (reply.Status == OK || reply.Status == ErrNoKey) {
+					return reply.Value
 				}
+				if ok && (reply.Status == ErrWrongGroup) {
+					break
+				}
+				// ... not ok, or ErrWrongLeader
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
+		// ask controler for the latest configuration.
 		ck.config = ck.sm.Query(-1)
 	}
 
@@ -136,75 +98,33 @@ func (ck *Clerk) Get(key string) string {
 // shared by Put and Append.
 // You will have to modify this function.
 func (ck *Clerk) PutAppend(key string, value string, op string) {
-	//args := PutAppendArgs{}
-	//args.Key = key
-	//args.Value = value
-	//args.Op = op
-	//
-	//for {
-	//	shard := key2shard(key)
-	//	gid := ck.config.Shards[shard]
-	//	if servers, ok := ck.config.Groups[gid]; ok {
-	//		for si := 0; si < len(servers); si++ {
-	//			srv := ck.make_end(servers[si])
-	//			var reply PutAppendReply
-	//			ok := srv.Call("ShardKV.PutAppend", &args, &reply)
-	//			if ok && reply.Err == OK {
-	//				return
-	//			}
-	//			if ok && reply.Err == ErrWrongGroup {
-	//				break
-	//			}
-	//			// ... not ok, or ErrWrongLeader
-	//		}
-	//	}
-	//	time.Sleep(100 * time.Millisecond)
-	//	// ask controler for the latest configuration.
-	//	ck.config = ck.sm.Query(-1)
-	//}
-
-	ck.requestId++
-
+	args := PutAppendArgs{Key: key, Value: value, Op: op, ClientId: ck.clientId, SequenceNum: atomic.AddInt64(&ck.currentSeqNum, 1)}
 	for {
-		args := PutAppendArgs{
-			Key:       key,
-			Value:     value,
-			Op:        op,
-			ClientId:  ck.clientId,
-			RequestId: ck.requestId,
-			ConfigNum: ck.config.Num,
-		}
 		shard := key2shard(key)
-		if gid := ck.config.Shards[shard]; gid != 0 {
-			leaderId := ck.gid2RecentLeaderIdMap[gid]
-			oldLeaderId := leaderId
-			if servers, ok := ck.config.Groups[gid]; ok {
-				for {
-					srv := ck.make_end(servers[leaderId])
-					var reply PutAppendReply
-					ok := srv.Call("ShardKV.PutAppend", &args, &reply)
-					if ok && reply.Err == OK {
-						ck.gid2RecentLeaderIdMap[gid] = leaderId
-						return
-					}
-					if ok && reply.Err == ErrWrongGroup {
-						break
-					}
-					leaderId = (leaderId + 1) % len(servers)
-					if oldLeaderId == leaderId {
-						break
-					}
+		gid := ck.config.Shards[shard]
+		if servers, ok := ck.config.Groups[gid]; ok {
+			for si := 0; si < len(servers); si++ {
+				srv := ck.make_end(servers[si])
+				var reply PutAppendReply
+				ok := srv.Call("ShardKV.PutAppend", &args, &reply)
+				if ok && reply.Status == OK {
+					return
 				}
+				if ok && reply.Status == ErrWrongGroup {
+					break
+				}
+				// ... not ok, or ErrWrongLeader
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
+		// ask controler for the latest configuration.
 		ck.config = ck.sm.Query(-1)
 	}
 }
 
 func (ck *Clerk) Put(key string, value string) {
-	ck.PutAppend(key, value, PUTOp)
+	ck.PutAppend(key, value, "Put")
 }
 func (ck *Clerk) Append(key string, value string) {
-	ck.PutAppend(key, value, APPENDOp)
+	ck.PutAppend(key, value, "Append")
 }

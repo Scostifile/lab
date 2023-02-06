@@ -1,4 +1,4 @@
-package shardkv2_0
+package shardkv3_0
 
 import "6.824/shardctrler"
 import "6.824/labrpc"

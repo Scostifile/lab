@@ -9,12 +9,20 @@ package shardkv
 // You will have to modify these definitions.
 //
 
+type ShardStatus uint8
+
 const (
 	OK             = "OK"
 	ErrNoKey       = "ErrNoKey"
 	ErrWrongGroup  = "ErrWrongGroup"
 	ErrWrongLeader = "ErrWrongLeader"
 	ErrConfigNum   = "ErrConfigNum"
+)
+
+const (
+	Normal ShardStatus = iota
+	Pulling
+	BePulling
 )
 
 type Err string
@@ -34,6 +42,13 @@ type MigrateShardReply struct {
 	Err       Err
 	ConfigMum int
 }
+
+type GarbageCollectionArgs struct {
+	ConfigNum           int
+	MigrateSuccessShard []int
+}
+
+type GarbageCollectionReply struct{}
 
 // Put or Append
 type PutAppendArgs struct {

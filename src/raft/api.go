@@ -29,10 +29,10 @@ func (rf *Raft) applier() {
 		} else if rf.lastApplied+1 <= rf.commitIndex &&
 			rf.lastApplied+1 <= rf.log.lastindex() &&
 			rf.lastApplied+1 > rf.log.start() {
-			// every time log append one by one, thus there apply one by one
+			// every time Entries append one by one, thus there apply one by one
 
 			//if rf.GetRaftStateSize() > 8000 {
-			//	fmt.Printf("%v: applier log size before is too big :%v\n", rf.me, rf.GetRaftStateSize())
+			//	fmt.Printf("%v: applier Entries size before is too big :%v\n", rf.me, rf.GetRaftStateSize())
 			//}
 
 			rf.lastApplied += 1
@@ -46,7 +46,7 @@ func (rf *Raft) applier() {
 			rf.applyCh <- am
 			rf.mu.Lock()
 			//if rf.GetRaftStateSize() > 8000 {
-			//	fmt.Printf("%v: applier log size after is too big :%v\n", rf.me, rf.GetRaftStateSize())
+			//	fmt.Printf("%v: applier Entries size after is too big :%v\n", rf.me, rf.GetRaftStateSize())
 			//}
 		} else {
 			rf.applyCond.Wait()

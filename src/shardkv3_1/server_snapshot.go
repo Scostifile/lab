@@ -2,12 +2,12 @@ package shardkv
 
 import (
 	"6.824/labgob"
-	"6.824/shardctrler"
+	shardctrler "6.824/shardctrler2"
 	"bytes"
 	"log"
 )
 
-//保存快照
+// 保存快照
 func (kv *ShardKV) saveSnapshot(logIndex int) {
 	//判断条件，满足一定的日志量才能进行持久化
 	if kv.maxraftstate == -1 || kv.persister.RaftStateSize() < kv.maxraftstate {
@@ -30,8 +30,8 @@ func (kv *ShardKV) saveSnapshot(logIndex int) {
 	kv.rf.Snapshot(logIndex, data)
 }
 
-//读取快照
-//两处调用：初始化阶段；收到Snapshot命令，即接收了leader的Snapshot
+// 读取快照
+// 两处调用：初始化阶段；收到Snapshot命令，即接收了leader的Snapshot
 func (kv *ShardKV) readPersist(isInit bool, snapshotTerm, snapshotIndex int, data []byte) {
 	if data == nil || len(data) < 1 {
 		return

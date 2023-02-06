@@ -1,8 +1,6 @@
 package shardkv
 
-import (
-	"6.824/shardctrler"
-)
+import shardctrler "6.824/shardctrler2"
 
 func (kv *ShardKV) notifyWaitCommand(reqId int64, err Err, value string) {
 	if ch, ok := kv.commandNotifyCh[reqId]; ok {
@@ -24,7 +22,7 @@ func (kv *ShardKV) getValueByKey(key string) (err Err, value string) {
 	return
 }
 
-//判断能否执行客户端发来的命令
+// 判断能否执行客户端发来的命令
 func (kv *ShardKV) ProcessKeyReady(configNum int, key string) Err {
 	//config不对
 	if configNum == 0 || configNum != kv.config.Num {
@@ -45,7 +43,7 @@ func (kv *ShardKV) ProcessKeyReady(configNum int, key string) Err {
 	return OK
 }
 
-//应用每一条命令
+// 应用每一条命令
 func (kv *ShardKV) handleApplyCh() {
 	for {
 		select {
@@ -85,7 +83,7 @@ func (kv *ShardKV) handleApplyCh() {
 
 }
 
-//处理get、put、append命令
+// 处理get、put、append命令
 func (kv *ShardKV) handleOpCommand(cmdIdx int, op Op) {
 	kv.log("start apply command %v：%+v", cmdIdx, op)
 	kv.lock("handleApplyCh")
@@ -141,8 +139,8 @@ func (kv *ShardKV) handleOpCommand(cmdIdx int, op Op) {
 	kv.saveSnapshot(cmdIdx)
 }
 
-//处理config命令，即更新config
-//主要是处理meshard、inputshard、outputshard
+// 处理config命令，即更新config
+// 主要是处理meshard、inputshard、outputshard
 func (kv *ShardKV) handleConfigCommand(cmdIdx int, config shardctrler.Config) {
 	kv.log("start handle config %v：%+v", cmdIdx, config)
 	kv.lock("handleApplyCh")
@@ -211,7 +209,7 @@ func (kv *ShardKV) handleConfigCommand(cmdIdx int, config shardctrler.Config) {
 	kv.saveSnapshot(cmdIdx)
 }
 
-//处理新的shard数据，即input shard
+// 处理新的shard数据，即input shard
 func (kv *ShardKV) handleMergeShardDataCommand(cmdIdx int, data MergeShardData) {
 	kv.log("start merge Shard Data %v：%+v", cmdIdx, data)
 	kv.lock("handleApplyCh")
@@ -240,7 +238,7 @@ func (kv *ShardKV) handleMergeShardDataCommand(cmdIdx int, data MergeShardData) 
 	go kv.callPeerCleanShardData(kv.oldConfig, data.ShardNum)
 }
 
-//处理已经迁移走的shard，即output shard
+// 处理已经迁移走的shard，即output shard
 func (kv *ShardKV) handleCleanShardDataCommand(cmdIdx int, data CleanShardDataArgs) {
 	kv.log("start clean shard data %v：%+v", cmdIdx, data)
 	kv.lock("handleApplyCh")

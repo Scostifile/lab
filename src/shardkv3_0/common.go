@@ -1,4 +1,9 @@
-package shardkv2_0
+package shardkv3_0
+
+import (
+	"6.824/shardctrler"
+	"fmt"
+)
 
 //
 // Sharded key/value server.
@@ -11,50 +16,67 @@ package shardkv2_0
 
 const (
 	OK             = "OK"
+	ErrNoKey       = "ErrNoKey"
 	ErrWrongLeader = "ErrWrongLeader"
 	ErrWrongGroup  = "ErrWrongGroup"
 )
 
 type Err string
 
-// Put or Append
-type PutAppendArgs struct {
-	Key    string
-	Value  string
-	Op     string // "Put" or "Append"
-	Cid    int64  "client unique id"
-	SeqNum int    "each request with a monotonically increasing sequence number"
+type CommandRequest struct {
+	Key   string
+	Value string
+
+	Servers   map[int][]string // for Join
+	GIDs      []int            // for Leave
+	Shard     int              // for Move
+	GID       int              // for Move
+	Num       int              // for Query
+	Op        string
+	ClientId  int64
+	CommandId int64
 }
 
-type PutAppendReply struct {
-	Err Err
-}
-
-type GetArgs struct {
-	Key string
-}
-
-type GetReply struct {
+type CommandResponse struct {
 	Err   Err
 	Value string
 }
 
-type MigrateArgs struct {
-	Shard     int
-	ConfigNum int
+type CommandType uint8
+
+const (
+	Operation CommandType = iota
+	Configuration
+	InsertShards
+	DeleteShards
+	EmptyEntry
+)
+
+type Command struct {
+	Op   CommandType
+	Data interface{}
 }
 
-type MigrateReply struct {
-	Err       Err
-	ConfigNum int
-	Shard     int
-	DB        map[string]string
-	Cid2Seq   map[int64]int
+func (command Command) String() string {
+	return fmt.Sprintf("{Type:%v,Data:%v}", command.Op, command.Data)
 }
 
-func Max(x, y int) int {
-	if x > y {
-		return x
-	}
-	return y
+func NewOperationCommand(request *CommandRequest) Command {
+	return Command{Operation, *request}
+}
+
+func NewConfigurationCommand(config *shardctrler.Config) Command {
+	return Command{Configuration, *config}
+}
+
+func NewInsertShardsCommand(response *ShardOperationResponse) Command {
+	return Command{InsertShards, *response}
+}
+
+func NewDeleteShardsCommand(request *ShardOperationRequest) Command {
+	return Command{DeleteShards, *request}
+}
+
+func NewEmptyEntryCommand() Command {
+	return Command{EmptyEntry, nil}
 }

@@ -1,52 +1,29 @@
-package shardkv
+package shardkv2_0
 
 //
 // Sharded key/value server.
-// Lots of replica groups, each running Raft.
-// Shardctrler decides which group serves each shard.
-// Shardctrler may change shard assignment from time to time.
+// Lots of replica groups, each running op-at-a-time paxos.
+// Shardmaster decides which group serves each shard.
+// Shardmaster may change shard assignment from time to time.
 //
 // You will have to modify these definitions.
 //
 
 const (
 	OK             = "OK"
-	ErrNoKey       = "ErrNoKey"
-	ErrWrongGroup  = "ErrWrongGroup"
 	ErrWrongLeader = "ErrWrongLeader"
-	ErrConfigNum   = "ErrConfigNum"
+	ErrWrongGroup  = "ErrWrongGroup"
 )
 
 type Err string
 
-type ShardComponent struct {
-	ShardIndex      int
-	KVDBOfShard     map[string]string
-	ClientRequestId map[int64]int
-}
-
-type MigrateShardArgs struct {
-	MigrateData []ShardComponent
-	ConfigNum   int
-}
-
-type MigrateShardReply struct {
-	Err       Err
-	ConfigMum int
-}
-
 // Put or Append
 type PutAppendArgs struct {
-	// You'll have to add definitions here.
-	Key   string
-	Value string
-	Op    string // "Put" or "Append"
-	// You'll have to add definitions here.
-	// Field names must start with capital letters,
-	// otherwise RPC will break.
-	ClientId  int64
-	RequestId int
-	ConfigNum int
+	Key    string
+	Value  string
+	Op     string // "Put" or "Append"
+	Cid    int64  "client unique id"
+	SeqNum int    "each request with a monotonically increasing sequence number"
 }
 
 type PutAppendReply struct {
@@ -55,13 +32,29 @@ type PutAppendReply struct {
 
 type GetArgs struct {
 	Key string
-	// You'll have to add definitions here.
-	ClientId  int64
-	RequestId int
-	ConfigNum int
 }
 
 type GetReply struct {
 	Err   Err
 	Value string
+}
+
+type MigrateArgs struct {
+	Shard     int
+	ConfigNum int
+}
+
+type MigrateReply struct {
+	Err       Err
+	ConfigNum int
+	Shard     int
+	DB        map[string]string
+	Cid2Seq   map[int64]int
+}
+
+func Max(x, y int) int {
+	if x > y {
+		return x
+	}
+	return y
 }

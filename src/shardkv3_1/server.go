@@ -2,7 +2,7 @@ package shardkv
 
 import (
 	"6.824/labrpc"
-	"6.824/shardctrler"
+	shardctrler "6.824/shardctrler2"
 	"fmt"
 	"time"
 )
@@ -60,7 +60,7 @@ type ShardKV struct {
 通用函数
 */
 
-//自定义锁
+// 自定义锁
 func (kv *ShardKV) lock(msg string) {
 	kv.mu.Lock()
 	kv.lockStartTime = time.Now()
@@ -83,12 +83,10 @@ func (kv *ShardKV) log(format string, value ...interface{}) {
 	DPrintf(baseMsg, format, value)
 }
 
-//
 // the tester calls Kill() when a ShardKV instance won't
 // be needed again. you are not required to do anything
 // in Kill(), but it might be convenient to (for example)
 // turn off debug output from this instance.
-//
 func (kv *ShardKV) Kill() {
 	kv.rf.Kill()
 	// Your code here, if desired.
@@ -150,7 +148,6 @@ func (kv *ShardKV) ticker() {
 初始服务器
 */
 
-//
 // servers[] contains the ports of the servers in this group.
 //
 // me is the index of the current server in servers[].
@@ -177,7 +174,6 @@ func (kv *ShardKV) ticker() {
 //
 // StartServer() must return quickly, so it should start goroutines
 // for any long-running work.
-//
 func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister, maxraftstate int, gid int, ctrlers []*labrpc.ClientEnd, make_end func(string) *labrpc.ClientEnd) *ShardKV {
 	// call labgob.Register on structures you want
 	// Go's RPC library to marshall/unmarshall.

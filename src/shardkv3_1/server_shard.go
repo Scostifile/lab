@@ -1,11 +1,11 @@
 package shardkv
 
 import (
-	"6.824/shardctrler"
+	shardctrler "6.824/shardctrler2"
 	"time"
 )
 
-//判断是否存在指定config和指定shardId的output shard
+// 判断是否存在指定config和指定shardId的output shard
 func (kv *ShardKV) OutputDataExist(configNum int, shardId int) bool {
 	if _, ok := kv.outputShards[configNum]; ok {
 		if _, ok = kv.outputShards[configNum][shardId]; ok {
@@ -48,7 +48,7 @@ func (kv *ShardKV) FetchShardData(args *FetchShardDataArgs, reply *FetchShardDat
 
 }
 
-//请求清除shard
+// 请求清除shard
 func (kv *ShardKV) CleanShardData(args *CleanShardDataArgs, reply *CleanShardDataReply) {
 	kv.log("get req CleanShardData:args:%+v, reply:%+v", args, reply)
 	defer kv.log("resp CleanShardData:args:%+v, reply:%+v", args, reply)
@@ -110,7 +110,7 @@ func (kv *ShardKV) CleanShardData(args *CleanShardDataArgs, reply *CleanShardDat
 定时任务，请求input shard
 */
 
-//定时获取shard
+// 定时获取shard
 func (kv *ShardKV) fetchShards() {
 	for {
 		select {
@@ -133,7 +133,7 @@ func (kv *ShardKV) fetchShards() {
 	}
 }
 
-//获取指定的shard
+// 获取指定的shard
 func (kv *ShardKV) fetchShard(shardId int, config shardctrler.Config) {
 	args := FetchShardDataArgs{
 		ConfigNum: config.Num,
@@ -190,8 +190,8 @@ func (kv *ShardKV) fetchShard(shardId int, config shardctrler.Config) {
 处理好input shard，请求源节点清除output shard
 */
 
-//发送给shard源节点，可以删除shard数据了
-//一般在apply command中处理好input的shard，发送给源节点删除保存的shard数据
+// 发送给shard源节点，可以删除shard数据了
+// 一般在apply command中处理好input的shard，发送给源节点删除保存的shard数据
 func (kv *ShardKV) callPeerCleanShardData(config shardctrler.Config, shardId int) {
 	args := CleanShardDataArgs{
 		ConfigNum: config.Num,

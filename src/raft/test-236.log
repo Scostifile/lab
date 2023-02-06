@@ -1,0 +1,102 @@
+=== RUN   TestInitialElection2A
+Test (2A): initial election ...
+  ... Passed --   4.0  3   32    9226    0
+--- PASS: TestInitialElection2A (4.03s)
+=== RUN   TestReElection2A
+Test (2A): election after network failure ...
+  ... Passed --   6.6  3   80   16969    0
+--- PASS: TestReElection2A (6.59s)
+=== RUN   TestManyElections2A
+Test (2A): multiple elections ...
+  ... Passed --   8.9  7  402   80067    0
+--- PASS: TestManyElections2A (8.89s)
+=== RUN   TestBasicAgree2B
+Test (2B): basic agreement ...
+  ... Passed --   1.9  3   18    5222    3
+--- PASS: TestBasicAgree2B (1.86s)
+=== RUN   TestRPCBytes2B
+Test (2B): RPC byte count ...
+  ... Passed --   3.5  3   50  115314   11
+--- PASS: TestRPCBytes2B (3.46s)
+=== RUN   TestFailAgree2B
+Test (2B): agreement after follower reconnects ...
+  ... Passed --   6.9  3   76   20958    8
+--- PASS: TestFailAgree2B (6.89s)
+=== RUN   TestFailNoAgree2B
+Test (2B): no agreement if too many followers disconnect ...
+  ... Passed --   4.5  5  107   25560    3
+--- PASS: TestFailNoAgree2B (4.51s)
+=== RUN   TestConcurrentStarts2B
+Test (2B): concurrent Start()s ...
+  ... Passed --   1.7  3   15    4497    6
+--- PASS: TestConcurrentStarts2B (1.68s)
+=== RUN   TestRejoin2B
+Test (2B): rejoin of partitioned leader ...
+  ... Passed --   8.0  3  112   27978    4
+--- PASS: TestRejoin2B (8.00s)
+=== RUN   TestBackup2B
+Test (2B): leader backs up quickly over incorrect follower logs ...
+  ... Passed --  28.3  5 1506 1059063  102
+--- PASS: TestBackup2B (28.25s)
+=== RUN   TestCount2B
+Test (2B): RPC counts aren't too high ...
+  ... Passed --   3.1  3   26    7898   12
+--- PASS: TestCount2B (3.08s)
+=== RUN   TestPersist12C
+Test (2C): basic persistence ...
+  ... Passed --   7.5  3   76   19726    6
+--- PASS: TestPersist12C (7.48s)
+=== RUN   TestPersist22C
+Test (2C): more persistence ...
+  ... Passed --  22.2  5  628  142608   16
+--- PASS: TestPersist22C (22.21s)
+=== RUN   TestPersist32C
+Test (2C): partitioned leader and one follower crash, leader restarts ...
+  ... Passed --   3.7  3   34    8736    4
+--- PASS: TestPersist32C (3.72s)
+=== RUN   TestFigure82C
+Test (2C): Figure 8 ...
+  ... Passed --  29.4  5  404   91815   22
+--- PASS: TestFigure82C (29.43s)
+=== RUN   TestUnreliableAgree2C
+Test (2C): unreliable agreement ...
+  ... Passed --   3.5  5  376  132194  246
+--- PASS: TestUnreliableAgree2C (3.49s)
+=== RUN   TestFigure8Unreliable2C
+Test (2C): Figure 8 (unreliable) ...
+  ... Passed --  30.4  5 6377 10697311  379
+--- PASS: TestFigure8Unreliable2C (30.36s)
+=== RUN   TestReliableChurn2C
+Test (2C): churn ...
+  ... Passed --  16.5  5 9902 27626317 3153
+--- PASS: TestReliableChurn2C (16.50s)
+=== RUN   TestUnreliableChurn2C
+Test (2C): unreliable churn ...
+0: sendAppendL to peer=4 now is not a leader in rf.term3==currentTerm1, its state=0
+  ... Passed --  16.2  5 2072 2079880  544
+--- PASS: TestUnreliableChurn2C (16.15s)
+=== RUN   TestSnapshotBasic2D
+Test (2D): snapshots basic ...
+  ... Passed --   7.9  3  144   66581  197
+--- PASS: TestSnapshotBasic2D (7.89s)
+=== RUN   TestSnapshotInstall2D
+Test (2D): install snapshots (disconnect) ...
+  ... Passed --  53.3  3  839  312239  325
+--- PASS: TestSnapshotInstall2D (53.32s)
+=== RUN   TestSnapshotInstallUnreliable2D
+Test (2D): install snapshots (disconnect+unreliable) ...
+  ... Passed --  65.5  3  986  352860  366
+--- PASS: TestSnapshotInstallUnreliable2D (65.46s)
+=== RUN   TestSnapshotInstallCrash2D
+Test (2D): install snapshots (crash) ...
+  ... Passed --  43.8  3  584  256176  357
+--- PASS: TestSnapshotInstallCrash2D (43.84s)
+=== RUN   TestSnapshotInstallUnCrash2D
+Test (2D): install snapshots (unreliable+crash) ...
+  ... Passed --  58.4  3  720  303257  329
+--- PASS: TestSnapshotInstallUnCrash2D (58.37s)
+=== RUN   TestSnapshotAllCrash2D
+Test (2D): crash and restart all servers ...
+  ... Passed --  17.8  3  242   74928   51
+--- PASS: TestSnapshotAllCrash2D (17.76s)
+PASS

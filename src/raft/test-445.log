@@ -1,0 +1,104 @@
+=== RUN   TestInitialElection2A
+Test (2A): initial election ...
+  ... Passed --   4.0  3   32    9226    0
+--- PASS: TestInitialElection2A (4.04s)
+=== RUN   TestReElection2A
+Test (2A): election after network failure ...
+  ... Passed --   6.6  3   79   16672    0
+--- PASS: TestReElection2A (6.59s)
+=== RUN   TestManyElections2A
+Test (2A): multiple elections ...
+  ... Passed --   8.0  7  327   67647    0
+--- PASS: TestManyElections2A (7.97s)
+=== RUN   TestBasicAgree2B
+Test (2B): basic agreement ...
+  ... Passed --   1.9  3   18    5222    3
+--- PASS: TestBasicAgree2B (1.86s)
+=== RUN   TestRPCBytes2B
+Test (2B): RPC byte count ...
+  ... Passed --   3.5  3   50  115314   11
+--- PASS: TestRPCBytes2B (3.46s)
+=== RUN   TestFailAgree2B
+Test (2B): agreement after follower reconnects ...
+  ... Passed --   6.9  3   76   21053    8
+--- PASS: TestFailAgree2B (6.95s)
+=== RUN   TestFailNoAgree2B
+Test (2B): no agreement if too many followers disconnect ...
+  ... Passed --   4.6  5  111   26782    3
+--- PASS: TestFailNoAgree2B (4.62s)
+=== RUN   TestConcurrentStarts2B
+Test (2B): concurrent Start()s ...
+  ... Passed --   1.7  3   16    4712    6
+--- PASS: TestConcurrentStarts2B (1.69s)
+=== RUN   TestRejoin2B
+Test (2B): rejoin of partitioned leader ...
+  ... Passed --   8.1  3  118   29347    4
+--- PASS: TestRejoin2B (8.12s)
+=== RUN   TestBackup2B
+Test (2B): leader backs up quickly over incorrect follower logs ...
+  ... Passed --  28.2  5 1517 1075832  102
+--- PASS: TestBackup2B (28.18s)
+=== RUN   TestCount2B
+Test (2B): RPC counts aren't too high ...
+  ... Passed --   3.1  3   26    7900   12
+--- PASS: TestCount2B (3.08s)
+=== RUN   TestPersist12C
+Test (2C): basic persistence ...
+  ... Passed --   7.5  3   76   19680    6
+--- PASS: TestPersist12C (7.46s)
+=== RUN   TestPersist22C
+Test (2C): more persistence ...
+  ... Passed --  22.2  5  628  143386   16
+--- PASS: TestPersist22C (22.21s)
+=== RUN   TestPersist32C
+Test (2C): partitioned leader and one follower crash, leader restarts ...
+  ... Passed --   3.7  3   34    8738    4
+--- PASS: TestPersist32C (3.72s)
+=== RUN   TestFigure82C
+Test (2C): Figure 8 ...
+  ... Passed --  29.2  5  390   88267   23
+--- PASS: TestFigure82C (29.19s)
+=== RUN   TestUnreliableAgree2C
+Test (2C): unreliable agreement ...
+  ... Passed --   3.5  5  359  125088  246
+--- PASS: TestUnreliableAgree2C (3.48s)
+=== RUN   TestFigure8Unreliable2C
+Test (2C): Figure 8 (unreliable) ...
+  ... Passed --  32.7  5 8726 27063251   49
+--- PASS: TestFigure8Unreliable2C (32.69s)
+=== RUN   TestReliableChurn2C
+Test (2C): churn ...
+0: sendAppendL to peer=2 now is not a leader in rf.term2==currentTerm1, its state=0
+0: sendAppendL to peer=3 now is not a leader in rf.term2==currentTerm1, its state=0
+0: sendAppendL to peer=4 now is not a leader in rf.term2==currentTerm1, its state=0
+  ... Passed --  16.4  5 5661 6036433 1906
+--- PASS: TestReliableChurn2C (16.44s)
+=== RUN   TestUnreliableChurn2C
+Test (2C): unreliable churn ...
+  ... Passed --  16.5  5 4638 13925739  601
+--- PASS: TestUnreliableChurn2C (16.50s)
+=== RUN   TestSnapshotBasic2D
+Test (2D): snapshots basic ...
+  ... Passed --   7.9  3  147   70082  192
+--- PASS: TestSnapshotBasic2D (7.89s)
+=== RUN   TestSnapshotInstall2D
+Test (2D): install snapshots (disconnect) ...
+  ... Passed --  51.7  3  822  291347  291
+--- PASS: TestSnapshotInstall2D (51.70s)
+=== RUN   TestSnapshotInstallUnreliable2D
+Test (2D): install snapshots (disconnect+unreliable) ...
+  ... Passed --  67.2  3 1012  356823  348
+--- PASS: TestSnapshotInstallUnreliable2D (67.17s)
+=== RUN   TestSnapshotInstallCrash2D
+Test (2D): install snapshots (crash) ...
+  ... Passed --  43.8  3  583  264434  380
+--- PASS: TestSnapshotInstallCrash2D (43.79s)
+=== RUN   TestSnapshotInstallUnCrash2D
+Test (2D): install snapshots (unreliable+crash) ...
+  ... Passed --  56.9  3  711  331974  355
+--- PASS: TestSnapshotInstallUnCrash2D (56.90s)
+=== RUN   TestSnapshotAllCrash2D
+Test (2D): crash and restart all servers ...
+  ... Passed --  17.8  3  242   74452   51
+--- PASS: TestSnapshotAllCrash2D (17.77s)
+PASS

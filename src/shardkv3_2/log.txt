@@ -1,0 +1,49 @@
+****************************************
+Test: static shards ...
+  ... Passed
+Test: join then leave ...
+  ... Passed
+Test: snapshots, join, and leave ...
+  ... Passed
+Test: servers miss configuration changes...
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+migrating is not Bepulling
+migrating is not Bepulling
+migrating is not Bepulling
+migrating is not Bepulling
+migrating is not Bepulling
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+  ... Passed
+Test: concurrent puts and configuration changes...
+  ... Passed
+Test: more concurrent puts and configuration changes...
+ExecuteMigrateShardsOnServer migrateShard = normal?
+migrating is not Bepulling
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+ExecuteMigrateShardsOnServer migrateShard = normal?
+1: sendAppendL to peer=0 now is not a leader in rf.term6==currentTerm4, its state=1
+1: sendAppendL to peer=2 now is not a leader in rf.term6==currentTerm4, its state=1
+2: sendAppendL to peer=0 now is not a leader in rf.term8==currentTerm7, its state=1
+2: sendAppendL to peer=1 now is not a leader in rf.term8==currentTerm7, its state=1

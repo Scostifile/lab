@@ -3,11 +3,14 @@ package shardkv
 import (
 	"6.824/raft"
 	"fmt"
+	"log"
 )
 
 func (kv *ShardKV) ReadRaftApplyCommandLoop() {
-	for !kv.Killed() {
+	for {
 		select {
+		case <-kv.done:
+			return
 		case message := <-kv.applyCh:
 			if message.CommandValid {
 				kv.GetCommandFromRaft(message)
@@ -36,18 +39,20 @@ func (kv *ShardKV) GetCommandFromRaft(message raft.ApplyMsg) {
 	} else if op.Operation == GARBAGECOLLECTIONOp {
 		kv.ExecuteGarbageCollectionOpOnServer(op)
 	} else if !kv.ifRequestDuplicate(op.ClientId, op.RequestId, key2shard(op.Key)) {
-		if op.Operation == PUTOp {
-			kv.ExecutePutOpOnKVDB(op)
-		}
-		if op.Operation == APPENDOp {
-			kv.ExecuteAppendOnKVDB(op)
+		ifShardResponse, ifShardAvailable := kv.CheckShardState(op.ConfigNum_MIGRATE, key2shard(op.Key))
+		if ifShardResponse && ifShardAvailable {
+			if op.Operation == PUTOp {
+				kv.ExecutePutOpOnKVDB(op)
+			}
+			if op.Operation == APPENDOp {
+				kv.ExecuteAppendOnKVDB(op)
+			}
 		}
 	}
 
 	if kv.maxraftstate != -1 {
 		kv.IfNeedToSendSnapshotCommand(message.CommandIndex, 9)
 	}
-
 	kv.SendMessageToWaitChannel(op, message.CommandIndex)
 }
 
@@ -65,7 +70,7 @@ func (kv *ShardKV) ExecuteGetOpOnKVDB(op Op) (string, bool) {
 	shardNum := key2shard(op.Key)
 	kv.mu.Lock()
 	value, exist := kv.kvDB[shardNum].KVDBOfShard[op.Key]
-	//kv.kvDB[shardNum].ClientRequestId[op.ClientId] = op.RequestId
+	kv.kvDB[shardNum].ClientRequestId[op.ClientId] = op.RequestId
 	kv.mu.Unlock()
 
 	return value, exist
@@ -100,18 +105,18 @@ func (kv *ShardKV) ExecuteNewConfigOpOnServer(op Op) {
 		return
 	}
 
+	// all migrate shard should be finished(maybe is useful for peers which is not leader)
+	for shard := 0; shard < NShards; shard++ {
+		if kv.migratingShard[shard] != Normal {
+			return
+		}
+	}
 	kv.lockMigratingShardsL(newConfig.Shards)
-
 	kv.config = newConfig
-	//fmt.Printf("%v: gid=%v newConfig pull finish!! number=%v shards=%v\n", kv.me, kv.gid, newConfig.Num, newConfig.Shards)
 }
 
 func (kv *ShardKV) lockMigratingShardsL(newShards [NShards]int) {
 	oldShards := kv.config.Shards
-	//fmt.Printf("%v: gid=%v rf.me=%v lockMigratingShardsL ---begin--- :%v in configNum:%v\n",
-	//	kv.me, kv.gid, kv.rf.Me(), kv.migratingShard, kv.config.Num)
-	//fmt.Printf("newConfigShards=%v\n", newShards)
-	//fmt.Printf(" oldConfigShard=%v\n", kv.config.Shards)
 	for shard := 0; shard < NShards; shard++ {
 		// old Shards not ever belong to myself
 		if oldShards[shard] == kv.gid && newShards[shard] != kv.gid {
@@ -122,7 +127,8 @@ func (kv *ShardKV) lockMigratingShardsL(newShards [NShards]int) {
 					fmt.Printf("impossible! shard status != Serving\n")
 				}
 			} else {
-				fmt.Printf("%v: lockMigratingShardsL newShards[%v]=0 in configNum=%v\n", kv.me, shard, kv.config.Num)
+				log.Fatalf("%v: gid=%v lockMigratingShardsL oldShards[%v]=%v newShards[%v]=0 in configNum=%v\n",
+					kv.me, kv.gid, shard, kv.gid, shard, kv.config.Num)
 			}
 		}
 		// new Shards owm to myself
@@ -133,13 +139,9 @@ func (kv *ShardKV) lockMigratingShardsL(newShards [NShards]int) {
 				} else {
 					fmt.Printf("impossible! shard status != BelongToOtherGroup\n")
 				}
-			} else {
-				kv.migratingShard[shard] = Normal
 			}
 		}
 	}
-	//fmt.Printf("%v: gid=%v rf.me=%v lockMigratingShardsL ---end--- :%v in configNum:%v\n",
-	//	kv.me, kv.gid, kv.rf.Me(), kv.migratingShard, kv.config.Num)
 }
 
 func (kv *ShardKV) ExecuteMigrateShardsOnServer(op Op) {
@@ -152,26 +154,38 @@ func (kv *ShardKV) ExecuteMigrateShardsOnServer(op Op) {
 		return
 	}
 	for _, shardComponent := range op.MigrateData_MIGRATE {
-		// data that is migrated out and need to be cleaned
-		//if kv.migratingShard[shardComponent.ShardIndex] == BePulling {
-		//	kv.kvDB[shardComponent.ShardIndex] = ShardComponent{
-		//		shardComponent.ShardIndex,
-		//		make(map[string]string),
-		//		make(map[int64]int),
-		//	}
-		//	kv.migratingShard[shardComponent.ShardIndex] = Recycling
-		//}
-
 		// data that is migrated in
 		if kv.migratingShard[shardComponent.ShardIndex] == Pulling {
+			kv.migratingShard[shardComponent.ShardIndex] = Normal
 			if myConfig.Shards[shardComponent.ShardIndex] == kv.gid {
+				// maybe should clear the KVDB first to prevent the retention of old data
+				if len(kv.kvDB[shardComponent.ShardIndex].KVDBOfShard) != 0 ||
+					len(kv.kvDB[shardComponent.ShardIndex].ClientRequestId) != 0 {
+					fmt.Printf("%v: gid=%v ExecuteMigrateShardsOnServer clear the KVDB!!!\n", kv.me, kv.gid)
+					kv.kvDB[shardComponent.ShardIndex].KVDBOfShard = make(map[string]string)
+					kv.kvDB[shardComponent.ShardIndex].ClientRequestId = make(map[int64]int)
+				}
+
+				//if _, exist := kv.kvDB[shardComponent.ShardIndex].KVDBOfShard["2"]; exist {
+				//	fmt.Printf("%v: gid=%v in configNum=%v migrateProccess before KVDBofShard= %v dupMap=%v\n",
+				//		kv.me, kv.gid, kv.config.Num, kv.kvDB[shardComponent.ShardIndex].KVDBOfShard["2"], kv.kvDB[shardComponent.ShardIndex].ClientRequestId)
+				//
+				//}
+
 				CloneShardComponent(
 					&kv.kvDB[shardComponent.ShardIndex],
 					shardComponent)
+
+				//if _, exist := kv.kvDB[shardComponent.ShardIndex].KVDBOfShard["2"]; exist {
+				//	fmt.Printf("%v: gid=%v in configNum=%v migrateProccess after KVDBofShard= %v dupMap=%v\n",
+				//		kv.me, kv.gid, kv.config.Num, kv.kvDB[shardComponent.ShardIndex].KVDBOfShard["2"], kv.kvDB[shardComponent.ShardIndex].ClientRequestId)
+				//
+				//}
+
 			} else {
-				fmt.Printf("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1\n")
+				fmt.Printf("%v: gid=%v ExecuteMigrateShardsOnServer kv.migratingShard[x] != kv.gid!!!!!!!!!!!!!!!!!!1\n",
+					kv.mu, kv.gid)
 			}
-			kv.migratingShard[shardComponent.ShardIndex] = Normal
 		}
 	}
 }

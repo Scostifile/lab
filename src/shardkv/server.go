@@ -37,7 +37,6 @@ type Op struct {
 	Config_NEWCONFIG    shardctrler.Config
 	MigrateData_MIGRATE []ShardComponent
 	ConfigNum_MIGRATE   int
-	GarbageDeleteShard  int
 }
 
 type ShardKV struct {
@@ -63,10 +62,10 @@ type ShardKV struct {
 	migratingShard   [NShards]ShardStatus // use to lock the migrating shards that others can't operate
 }
 
-func (kv *ShardKV) CheckShardState(clientNum int, shardIndex int) (bool, bool) {
+func (kv *ShardKV) CheckShardState(clientConfigNum int, shardIndex int) (bool, bool) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	return kv.config.Num == clientNum && kv.config.Shards[shardIndex] == kv.gid,
+	return kv.config.Num == clientConfigNum && kv.config.Shards[shardIndex] == kv.gid,
 		kv.migratingShard[shardIndex] == Normal
 }
 
@@ -100,12 +99,12 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 		return
 	}
 	shardIndex := key2shard(args.Key)
-	ifResponse, ifAvailable := kv.CheckShardState(args.ConfigNum, shardIndex)
-	if !ifResponse {
+	ifShardResponse, ifShardAvailable := kv.CheckShardState(args.ConfigNum, shardIndex)
+	if !ifShardResponse {
 		reply.Err = ErrWrongGroup
 		return
 	}
-	if !ifAvailable {
+	if !ifShardAvailable {
 		reply.Err = ErrWrongLeader
 		return
 	}
@@ -123,9 +122,9 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	select {
 	case <-time.After(time.Millisecond * CONSENSUS_TIMEOUT):
 		_, ifLeaderState := kv.rf.GetState()
-		//if kv.ifRequestDuplicate(op.ClientId, op.RequestId, key2shard(op.Key)) &&
-		//	ifLeaderState {
-		if ifLeaderState {
+		fmt.Printf("Get request timeout!!! ifLeaderState=%v\n", ifLeaderState)
+		if kv.ifRequestDuplicate(op.ClientId, op.RequestId, key2shard(op.Key)) &&
+			ifLeaderState {
 			fmt.Printf("Get request duplicate\n")
 			value, exist := kv.ExecuteGetOpOnKVDB(op)
 			if exist {
@@ -144,6 +143,12 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 			if exist {
 				reply.Err = OK
 				reply.Value = value
+
+				//kv.mu.Lock()
+				//if args.Key == "2" {
+				//	fmt.Printf("%v: gid=%v Get KVDB=%v\n", kv.me, kv.gid, kv.kvDB)
+				//}
+				//kv.mu.Unlock()
 			} else {
 				reply.Err = ErrNoKey
 				reply.Value = ""
@@ -154,6 +159,7 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	}
 
 	kv.mu.Lock()
+	//close(kv.waitApplyChannel[raftIndex])
 	delete(kv.waitApplyChannel, raftIndex)
 	kv.mu.Unlock()
 }
@@ -167,23 +173,24 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 
 	shardIndex := key2shard(args.Key)
-	ifResponse, ifAvailable := kv.CheckShardState(args.ConfigNum, shardIndex)
+	ifShardResponse, ifShardAvailable := kv.CheckShardState(args.ConfigNum, shardIndex)
 
-	if !ifResponse {
+	if !ifShardResponse {
 		reply.Err = ErrWrongGroup
 		return
 	}
-	if !ifAvailable {
+	if !ifShardAvailable {
 		reply.Err = ErrWrongLeader
 		return
 	}
 
 	op := Op{
-		Operation: args.Op,
-		Key:       args.Key,
-		Value:     args.Value,
-		ClientId:  args.ClientId,
-		RequestId: args.RequestId,
+		Operation:         args.Op,
+		Key:               args.Key,
+		Value:             args.Value,
+		ClientId:          args.ClientId,
+		RequestId:         args.RequestId,
+		ConfigNum_MIGRATE: args.ConfigNum,
 	}
 	raftIndex, _, _ := kv.rf.Start(op)
 	channelRaftIndex := kv.getWaitChannel(raftIndex)
@@ -196,14 +203,27 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 			reply.Err = ErrWrongLeader
 		}
 	case raftCommitOp := <-channelRaftIndex:
-		if raftCommitOp.ClientId == op.ClientId && raftCommitOp.RequestId == op.RequestId {
+		ifResponse, ifAvailable := kv.CheckShardState(op.ConfigNum_MIGRATE, key2shard(op.Key))
+
+		if ifResponse &&
+			ifAvailable &&
+			raftCommitOp.ClientId == op.ClientId &&
+			raftCommitOp.RequestId == op.RequestId {
 			reply.Err = OK
+
+			//kv.mu.Lock()
+			//if args.Key == "2" {
+			//	fmt.Printf("%v: gid=%v in configNum=%v arg.configNum=%v PutAppend KVDBofShard=%v dupMap=%v\n",
+			//		kv.me, kv.gid, kv.config.Num, args.ConfigNum, kv.kvDB[shardIndex].KVDBOfShard, kv.kvDB[shardIndex].ClientRequestId)
+			//}
+			//kv.mu.Unlock()
 		} else {
 			reply.Err = ErrWrongLeader
 		}
 	}
 
 	kv.mu.Lock()
+	//close(kv.waitApplyChannel[raftIndex])
 	delete(kv.waitApplyChannel, raftIndex)
 	kv.mu.Unlock()
 }
@@ -265,7 +285,6 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	// Your initialization code here.
 	kv.done = make(chan struct{})
 	kv.kvDB = make([]ShardComponent, NShards)
-	kv.config.Num = 0
 
 	for shard := 0; shard < NShards; shard++ {
 		kv.kvDB[shard] = ShardComponent{
@@ -291,9 +310,8 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 
 	go kv.ReadRaftApplyCommandLoop()
-	go kv.PullNewConfigLoop()
-	//go kv.SendShardToOtherGroupLoop()
-	go kv.monitor(kv.watchShardAndMigrate, SENDSHARDS_TIMEOUT)
+	go kv.leaderMonitor(kv.PullNewConfigLoop, CONFIGCHECK_TIMEOUT*time.Millisecond)
+	go kv.leaderMonitor(kv.SendShardToOtherGroupLoop, SENDSHARDS_TIMEOUT*time.Millisecond)
 
 	return kv
 }

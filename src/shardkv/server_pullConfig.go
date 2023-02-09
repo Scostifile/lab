@@ -1,9 +1,5 @@
 package shardkv
 
-import (
-	"time"
-)
-
 func (kv *ShardKV) isCompleteMigration() bool {
 	// all migrate shard should be finished
 	kv.mu.Lock()
@@ -17,17 +13,7 @@ func (kv *ShardKV) isCompleteMigration() bool {
 }
 
 func (kv *ShardKV) PullNewConfigLoop() {
-	for !kv.Killed() {
-		time.Sleep(CONFIGCHECK_TIMEOUT * time.Millisecond)
-		_, ifLeader := kv.rf.GetState()
-		if !ifLeader || !kv.isCompleteMigration() {
-			//kv.mu.Lock()
-			//fmt.Printf("%v: gid=%v PullNewConfigLoop configShard=%v in currentConfigNum=%v miagrateShard=%v \n",
-			//	kv.me, kv.gid, kv.config.Shards, kv.config.Num, kv.migratingShard)
-			//kv.mu.Unlock()
-			continue
-		}
-
+	if kv.isCompleteMigration() {
 		kv.mu.Lock()
 		lastConfigNum := kv.config.Num
 		kv.mu.Unlock()

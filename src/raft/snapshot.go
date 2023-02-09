@@ -60,12 +60,6 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	tempLog[0] = Entry{Term: rf.log.entry(index).Term, Command: nil} // fix lab4B shardDeletion test
 	rf.log = mkLog(tempLog, index)
 
-	//if len(rf.persistData()) > 11668 {
-	//	fmt.Printf("%v:Snapshot is %v----medien----raft state size = %v rfPersistData=%v rflog=%v in term=%v, lastIncludeIndex=%v\n",
-	//		rf.me, rf.state, rf.persister.RaftStateSize(), len(rf.persistData()), len(rf.Entries.Entries), rf.currentTerm, rf.snapshotIndex)
-	//	fmt.Printf("%v:Snapshot Entries ----end---- is: %v\n", rf.me, rf.Entries.Entries[0].Command)
-	//}
-
 	if index > rf.commitIndex {
 		rf.commitIndex = index
 		fmt.Printf("111111111111111111111111111\n")

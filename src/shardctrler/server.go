@@ -9,7 +9,7 @@ import "sync"
 import "6.824/labgob"
 
 const (
-	CONSENSUS_TIMEOUT = 5000 // ms
+	CONSENSUS_TIMEOUT = 500 // ms
 	QueryOp           = "query"
 	JoinOp            = "join"
 	LeaveOp           = "leave"

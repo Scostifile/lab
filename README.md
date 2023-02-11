@@ -6,6 +6,8 @@
 
 - [x] Fault-tolerant Key/Value Service
 
-![test.jpg](image_readme%2Ftest.jpg)
+![test](image_readme/test.jpg)
 
 - [x] Sharded Key/Value Service
+
+![test](https://raw.githubusercontent.com/Scostifile/lab/feature/acheiveShardKV/image_readme/test.jpg)

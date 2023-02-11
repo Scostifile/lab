@@ -1,10 +1,10 @@
 # Architecture Diagram
 
 - [x] Raft
-  ![raftPicture.png](image_readme/raftPicture.png)
+  ![raftPicture.png](https://github.com/Scostifile/lab/blob/feature/acheiveShardKV/image_readme/raftPicture.png)
 - [x] Fault-tolerant Key/Value Service
   <div align="center">
-    <img src="image_readme/raftPicture.svg">
+    <img src="image_readme/raftPicture.png">
   </div>
 - [x] Sharded Key/Value Service
 

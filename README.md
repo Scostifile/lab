@@ -10,4 +10,4 @@
 
 - [x] Sharded Key/Value Service
 
-![test](https://raw.githubusercontent.com/Scostifile/lab/feature/acheiveShardKV/image_readme/test.jpg)
+![test](https://raw.githubusercontent.com/Scostifile/lab/feature/acheiveShardKV/image_readme/test2.jpg)

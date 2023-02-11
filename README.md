@@ -2,7 +2,7 @@
 
 - [x] Raft
 
-  ![raftPicture.svg](image_readme/raftPicture.svg)
+  ![picture](https://user-images.githubusercontent.com/81071995/218274231-cec7947c-e719-4923-aaf4-63c59bdcc679.svg)
 
 - [x] Fault-tolerant Key/Value Service
 

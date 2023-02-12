@@ -64,21 +64,21 @@ func (sc *ShardCtrler) ExecuteJoinOnController(op Op) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
 	sc.lastRequestId[op.ClientId] = op.RequestId
-	sc.configs = append(sc.configs, *sc.MakeJoinConfig(op.Servers_Join))
+	sc.configs = append(sc.configs, *sc.MakeJoinConfigL(op.Servers_Join))
 }
 
 func (sc *ShardCtrler) ExecuteLeaveOnController(op Op) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
 	sc.lastRequestId[op.ClientId] = op.RequestId
-	sc.configs = append(sc.configs, *sc.MakeLeaveConfig(op.Gids_Leave))
+	sc.configs = append(sc.configs, *sc.MakeLeaveConfigL(op.Gids_Leave))
 }
 
 func (sc *ShardCtrler) ExecuteMoveOnController(op Op) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
 	sc.lastRequestId[op.ClientId] = op.RequestId
-	sc.configs = append(sc.configs, *sc.MakeMoveConfig(op.Shard_Move, op.Gid_Move))
+	sc.configs = append(sc.configs, *sc.MakeMoveConfigL(op.Shard_Move, op.Gid_Move))
 }
 
 func (sc *ShardCtrler) ifRequestDuplicate(newClientId int64, newRequestId int) bool {

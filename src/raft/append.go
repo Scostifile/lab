@@ -10,7 +10,7 @@ type AppendEntriesArgs struct {
 	LeaderId     int     // who is the leader
 	PrevLogIndex int     // index immediately preceding new ones
 	PrevLogTerm  int     // term of PrevLogIndex entry
-	Entries      []Entry // new log entries
+	Entries      []Entry // new Log entries
 	LeaderCommit int     // leader's commitIndex
 }
 
@@ -68,24 +68,24 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 		// outdated message because of unreliable network
 		reply.ConflictValid = true
-		//reply.ConflictFirst = rf.log.lastindex() + 1
+		//reply.ConflictFirst = rf.Entries.lastindex() + 1
 		return
 	}
 	rf.resetTimer()
 
 	// Rule 2
 	if rf.log.lastindex() < args.PrevLogIndex {
-		//fmt.Printf("%v: AppendEntries rule2 lastindex:%v, previndex:%v\n", rf.me, rf.log.lastindex(), args.PrevLogIndex)
+		//fmt.Printf("%v: AppendEntries rule2 lastindex:%v, previndex:%v\n", rf.me, rf.Entries.lastindex(), args.PrevLogIndex)
 
 		reply.ConflictValid = true
 		reply.ConflictFirst = rf.log.lastindex() + 1
 		return
 	}
 
-	// optimization of conflict log entry
+	// optimization of conflict Entries entry
 	if rf.log.entry(args.PrevLogIndex).Term != args.PrevLogTerm {
 		//fmt.Printf("%v: AppendEntries optimization of conflict peerlogTerm:%v leaderlogTerm:%v previndex:%v logindex0:%v\n",
-		//	rf.me, rf.log.entry(args.PrevLogIndex).Term, args.PrevLogTerm, args.PrevLogIndex, rf.log.start())
+		//	rf.me, rf.Entries.entry(args.PrevLogIndex).Term, args.PrevLogTerm, args.PrevLogIndex, rf.Entries.start())
 		reply.ConflictValid = true
 		reply.ConflictTerm = rf.log.entry(args.PrevLogIndex).Term
 		conflictIndex := args.PrevLogIndex
@@ -111,9 +111,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			rf.log.append(e)
 		}
 		// assert that entries are equal
-		//if reflect.DeepEqual(rf.log.entry(index).Command, e.Command) {
-		//	log.Fatalf("Entry Error %v from=%v index=%v old=%v new=%v\n",
-		//		rf.me, args.LeaderId, index, rf.log.entry(index), args.Entries[i])
+		//if reflect.DeepEqual(rf.Entries.entry(index).Command, e.Command) {
+		//	Entries.Fatalf("Entry Error %v from=%v index=%v old=%v new=%v\n",
+		//		rf.me, args.LeaderId, index, rf.Entries.entry(index), args.Entries[i])
 		//}
 	}
 	rf.persist()
@@ -129,7 +129,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 		if rf.commitIndex > rf.log.lastindex() {
 			if lastNew != rf.log.lastindex() {
-				log.Fatalf("%v: AppendEntries lastNew != rf.log.lastIndex!!!\n", rf.me)
+				log.Fatalf("%v: AppendEntries lastNew != rf.Entries.lastIndex!!!\n", rf.me)
 			}
 			rf.commitIndex = rf.log.lastindex()
 		}
@@ -142,7 +142,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 //func (rf *Raft) sendAppendsL(heartbeat bool) {
 //	for i, _ := range rf.peers {
 //		if i != rf.me {
-//			if rf.log.lastindex() > rf.nextIndex[i] || heartbeat {
+//			if rf.Entries.lastindex() > rf.nextIndex[i] || heartbeat {
 //				go rf.sendAppendL(i, heartbeat, rf.currentTerm)
 //			}
 //		}
@@ -168,7 +168,7 @@ func (rf *Raft) sendAppendL(
 
 	// ?? maybe not execute
 	if next > rf.log.lastindex()+1 {
-		fmt.Printf("%v: sendAppendL nextIndex[%v]=%v > lastindex=%v, index0=%v\n",
+		fmt.Printf("%v: sendAppendL nextIndex[%v]=%v > lastindex=%v, Index0=%v\n",
 			rf.me, peer, rf.nextIndex[peer], rf.log.lastindex(), rf.log.start())
 		next = rf.log.lastindex() + 1
 	}
@@ -213,18 +213,18 @@ func (rf *Raft) sendAppendEntries(
 
 func (rf *Raft) advanceCommitL() {
 	if rf.state != Leader {
-		//log.Fatalf("advanceCommit: state %v\n", rf.state)
+		//Entries.Fatalf("advanceCommit: state %v\n", rf.state)
 		fmt.Printf("%v: advanceCommit: rf.state%v != leader\n", rf.me, rf.state)
 		return
 	}
 
 	//start := rf.commitIndex + 1
-	//if start < rf.log.start() { // on restart start could be 1
-	//	start = rf.log.start()
+	//if start < rf.Entries.start() { // on restart start could be 1
+	//	start = rf.Entries.start()
 	//}
 	//
-	//for index := start; index <= rf.log.lastindex(); index++ {
-	//	if rf.log.entry(index).Term != rf.currentTerm {
+	//for index := start; index <= rf.Entries.lastindex(); index++ {
+	//	if rf.Entries.entry(index).Term != rf.currentTerm {
 	//		continue
 	//	}
 	//	n := 1
@@ -252,27 +252,27 @@ func (rf *Raft) advanceCommitL() {
 	//sort.Ints(tempMatchIndex)
 	//medianIndex := tempMatchIndex[matchLen/2]
 	//fmt.Printf("%v: advanceCommit tempMatchIndex:%v medianIndex:%v\n", rf.me, tempMatchIndex, medianIndex)
-	//if (medianIndex - rf.log.index0) >= len(rf.log.log) {
-	//	fmt.Printf("%v: advanceCommit tempMatchIndex:%v medianIndex:%v index0:%v logLen:%v\n",
-	//		rf.me, tempMatchIndex, medianIndex, rf.log.index0, len(rf.log.log))
+	//if (medianIndex - rf.Entries.Index0) >= len(rf.Entries.Entries) {
+	//	fmt.Printf("%v: advanceCommit tempMatchIndex:%v medianIndex:%v Index0:%v logLen:%v\n",
+	//		rf.me, tempMatchIndex, medianIndex, rf.Entries.Index0, len(rf.Entries.Entries))
 	//}
 
 	medianIndex := getMidLargeIndexBySort(rf.matchIndex)
 	//medianIndex := getMidLargeIndexByHeap(rf.matchIndex, len(rf.peers)/2)
 
-	// may happen in situation of figure8, when the previous leader A had replicated log
+	// may happen in situation of figure8, when the previous leader A had replicated Entries
 	// entries(e.g. index: 0~16) in majority servers but didn't commit them in term 7.
-	// Then the previous leader A crash, and other server B became leader in term 8(whose log
-	// index is from 0~9). Leader B update its log(0~11) so that A's log was cut whose log
+	// Then the previous leader A crash, and other server B became leader in term 8(whose Entries
+	// index is from 0~9). Leader B update its Entries(0~11) so that A's Entries was cut whose Entries
 	// entries index was from 0~11 in term 8. And server A became leader in term 9, when it
 	// operated till this code, its rf.matachIndex[peer] may be until index 16, thus it would
 	// enter into fellow if() condition.
-	if (medianIndex - rf.log.index0) >= len(rf.log.log) {
-		fmt.Printf("%v: advanceCommit medianIndex:%v index0:%v logLen:%v\n",
-			rf.me, medianIndex, rf.log.index0, len(rf.log.log))
+	if (medianIndex - rf.log.Index0) >= len(rf.log.Entries) {
+		fmt.Printf("%v: advanceCommit medianIndex:%v Index0:%v logLen:%v\n",
+			rf.me, medianIndex, rf.log.Index0, len(rf.log.Entries))
 	}
 
-	//if medianIndex > rf.commitIndex && rf.log.entry(medianIndex).Term == rf.currentTerm {
+	//if medianIndex > rf.commitIndex && rf.Entries.entry(medianIndex).Term == rf.currentTerm {
 	if medianIndex > rf.commitIndex &&
 		medianIndex <= rf.log.lastindex() &&
 		rf.log.entry(medianIndex).Term == rf.currentTerm {
@@ -288,24 +288,24 @@ func (rf *Raft) processConflictTermL(
 	args *AppendEntriesArgs,
 	reply *AppendEntriesReply) {
 
-	//if reply.ConflictTerm > rf.currentTerm { // follower's log ahead but isn't committed, thus it can be erased
+	//if reply.ConflictTerm > rf.currentTerm { // follower's Entries ahead but isn't committed, thus it can be erased
 	//	DPrintf("%v: processConflictTermL: reset nextIndex %v to %v\n",
 	//		rf.me, peer, reply.ConflictFirst)
 	//	rf.nextIndex[peer] = reply.ConflictFirst
 	//	fmt.Printf("%v: processConflictTermL: reset nextIndex %v to %v\n",
 	//		rf.me, peer, reply.ConflictFirst)
 	//} else {
-	//	if rf.nextIndex[peer] > rf.log.lastindex() {
-	//		rf.nextIndex[peer] = rf.log.lastindex()
+	//	if rf.nextIndex[peer] > rf.Entries.lastindex() {
+	//		rf.nextIndex[peer] = rf.Entries.lastindex()
 	//	}
 	//	DPrintf("%v: processConflictTermL: reset nextIndex %v to term %v,"+
-	//		"starting %v log %v\n",
-	//		rf.me, peer, reply.ConflictTerm, rf.nextIndex[peer], rf.log)
+	//		"starting %v Entries %v\n",
+	//		rf.me, peer, reply.ConflictTerm, rf.nextIndex[peer], rf.Entries)
 	//	for {
-	//		if rf.nextIndex[peer] < rf.log.start()+1 || rf.log.entry(rf.nextIndex[peer]).Term < reply.ConflictTerm { // missed everything?
+	//		if rf.nextIndex[peer] < rf.Entries.start()+1 || rf.Entries.entry(rf.nextIndex[peer]).Term < reply.ConflictTerm { // missed everything?
 	//			break
 	//		}
-	//		if rf.log.entry(rf.nextIndex[peer]).Term == reply.ConflictTerm {
+	//		if rf.Entries.entry(rf.nextIndex[peer]).Term == reply.ConflictTerm {
 	//			break
 	//		}
 	//		rf.nextIndex[peer] -= 1
@@ -359,11 +359,11 @@ func (rf *Raft) processAppendReplyTermL(
 	} else if reply.ConflictValid {
 		rf.processConflictTermL(peer, args, reply)
 		//go rf.sendAppendL(peer, false, rf.currentTerm)
-		//fmt.Printf("%v: processAppendReplyL reply.ConflictValid next:%v index0:%v==%v\n", rf.me, rf.nextIndex[peer], rf.log.start(), rf.log.index0)
+		//fmt.Printf("%v: processAppendReplyL reply.ConflictValid next:%v Index0:%v==%v\n", rf.me, rf.nextIndex[peer], rf.Entries.start(), rf.Entries.Index0)
 	} else if rf.nextIndex[peer] > 1 {
 		DPrintf("%v: processAppendReplyL backup by one\n", rf.me)
 		//rf.nextIndex[peer] -= 1
-		fmt.Printf("%v: processAppendReplyL next:%v index0:%v==%v\n", rf.me, rf.nextIndex[peer], rf.log.start(), rf.log.index0)
+		fmt.Printf("%v: processAppendReplyL next:%v Index0:%v==%v\n", rf.me, rf.nextIndex[peer], rf.log.start(), rf.log.Index0)
 		if rf.nextIndex[peer] < rf.log.start()+1 {
 			rf.sendSnapshot(peer, args.Term)
 			fmt.Printf("%v: processAppendReplyTermL chocie3\n", rf.me)

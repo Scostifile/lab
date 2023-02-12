@@ -9,14 +9,46 @@ package shardkv
 // You will have to modify these definitions.
 //
 
+type ShardStatus uint8
+
 const (
 	OK             = "OK"
 	ErrNoKey       = "ErrNoKey"
 	ErrWrongGroup  = "ErrWrongGroup"
 	ErrWrongLeader = "ErrWrongLeader"
+	ErrConfigNum   = "ErrConfigNum"
+)
+
+const (
+	Normal ShardStatus = iota
+	Pulling
+	BePulling
 )
 
 type Err string
+
+type ShardComponent struct {
+	ShardIndex      int
+	KVDBOfShard     map[string]string
+	ClientRequestId map[int64]int
+}
+
+type MigrateShardArgs struct {
+	MigrateData []ShardComponent
+	ConfigNum   int
+}
+
+type MigrateShardReply struct {
+	Err       Err
+	ConfigMum int
+}
+
+type GarbageCollectionArgs struct {
+	ConfigNum           int
+	MigrateSuccessShard []int
+}
+
+type GarbageCollectionReply struct{}
 
 // Put or Append
 type PutAppendArgs struct {
@@ -27,6 +59,9 @@ type PutAppendArgs struct {
 	// You'll have to add definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
+	ClientId  int64
+	RequestId int
+	ConfigNum int
 }
 
 type PutAppendReply struct {
@@ -36,6 +71,9 @@ type PutAppendReply struct {
 type GetArgs struct {
 	Key string
 	// You'll have to add definitions here.
+	ClientId  int64
+	RequestId int
+	ConfigNum int
 }
 
 type GetReply struct {

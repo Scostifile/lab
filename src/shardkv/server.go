@@ -1,17 +1,42 @@
 package shardkv
 
-
-import "6.824/labrpc"
+import (
+	"6.824/labrpc"
+	"fmt"
+	"sync/atomic"
+	"time"
+)
 import "6.824/raft"
 import "sync"
 import "6.824/labgob"
+import "6.824/shardctrler"
 
+const (
+	CONSENSUS_TIMEOUT   = 500
+	CONFIGCHECK_TIMEOUT = 120
+	SENDSHARDS_TIMEOUT  = 150
+	NShards             = shardctrler.NShards
 
+	GETOp               = "Get"
+	PUTOp               = "Put"
+	APPENDOp            = "Append"
+	MIGRATESHARDOp      = "Migrate"
+	GARBAGECOLLECTIONOp = "GarbageCollection"
+	NEWCONFIGOp         = "NewConfig"
+)
 
 type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
+	Operation           string
+	Key                 string
+	Value               string
+	ClientId            int64
+	RequestId           int
+	Config_NEWCONFIG    shardctrler.Config
+	MigrateData_MIGRATE []ShardComponent
+	ConfigNum_MIGRATE   int
 }
 
 type ShardKV struct {
@@ -25,30 +50,200 @@ type ShardKV struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
+	dead int32
+	done chan struct{}
+	mck  *shardctrler.Clerk
+
+	kvDB             []ShardComponent // every Shard has it's independent data
+	waitApplyChannel map[int]chan Op
+
+	lastIncludeIndex int
+	config           shardctrler.Config
+	migratingShard   [NShards]ShardStatus // use to lock the migrating shards that others can't operate
 }
 
+func (kv *ShardKV) CheckShardState(clientConfigNum int, shardIndex int) (bool, bool) {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	return kv.config.Num == clientConfigNum && kv.config.Shards[shardIndex] == kv.gid,
+		kv.migratingShard[shardIndex] == Normal
+}
+
+func (kv *ShardKV) CheckMigrateState(shardComponent []ShardComponent) bool {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	for _, shardData := range shardComponent {
+		if kv.migratingShard[shardData.ShardIndex] != Normal {
+			return false
+		}
+	}
+	return true
+}
+
+func (kv *ShardKV) getWaitChannel(raftIndex int) chan Op {
+	kv.mu.Lock()
+	channelRaftIndex, exist := kv.waitApplyChannel[raftIndex]
+	if !exist {
+		kv.waitApplyChannel[raftIndex] = make(chan Op, 1)
+		channelRaftIndex = kv.waitApplyChannel[raftIndex]
+	}
+	kv.mu.Unlock()
+	return channelRaftIndex
+}
 
 func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
+	_, ifLeader := kv.rf.GetState()
+	if !ifLeader {
+		reply.Err = ErrWrongLeader
+		return
+	}
+	shardIndex := key2shard(args.Key)
+	ifShardResponse, ifShardAvailable := kv.CheckShardState(args.ConfigNum, shardIndex)
+	if !ifShardResponse {
+		reply.Err = ErrWrongGroup
+		return
+	}
+	if !ifShardAvailable {
+		reply.Err = ErrWrongLeader
+		return
+	}
+
+	op := Op{
+		Operation: GETOp,
+		Key:       args.Key,
+		Value:     "",
+		ClientId:  args.ClientId,
+		RequestId: args.RequestId,
+	}
+	raftIndex, _, _ := kv.rf.Start(op)
+	channelRaftIndex := kv.getWaitChannel(raftIndex)
+
+	select {
+	case <-time.After(time.Millisecond * CONSENSUS_TIMEOUT):
+		_, ifLeaderState := kv.rf.GetState()
+		fmt.Printf("Get request timeout!!! ifLeaderState=%v\n", ifLeaderState)
+		if kv.ifRequestDuplicate(op.ClientId, op.RequestId, key2shard(op.Key)) &&
+			ifLeaderState {
+			fmt.Printf("Get request duplicate\n")
+			value, exist := kv.ExecuteGetOpOnKVDB(op)
+			if exist {
+				reply.Err = OK
+				reply.Value = value
+			} else {
+				reply.Err = ErrNoKey
+				reply.Value = ""
+			}
+		} else {
+			reply.Err = ErrWrongLeader
+		}
+	case raftCommitOp := <-channelRaftIndex:
+		if raftCommitOp.ClientId == op.ClientId && raftCommitOp.RequestId == op.RequestId {
+			value, exist := kv.ExecuteGetOpOnKVDB(op)
+			if exist {
+				reply.Err = OK
+				reply.Value = value
+
+				//kv.mu.Lock()
+				//if args.Key == "2" {
+				//	fmt.Printf("%v: gid=%v Get KVDB=%v\n", kv.me, kv.gid, kv.kvDB)
+				//}
+				//kv.mu.Unlock()
+			} else {
+				reply.Err = ErrNoKey
+				reply.Value = ""
+			}
+		} else {
+			reply.Err = ErrWrongLeader
+		}
+	}
+
+	kv.mu.Lock()
+	//close(kv.waitApplyChannel[raftIndex])
+	delete(kv.waitApplyChannel, raftIndex)
+	kv.mu.Unlock()
 }
 
 func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
+	_, ifLeader := kv.rf.GetState()
+	if !ifLeader {
+		reply.Err = ErrWrongLeader
+		return
+	}
+
+	shardIndex := key2shard(args.Key)
+	ifShardResponse, ifShardAvailable := kv.CheckShardState(args.ConfigNum, shardIndex)
+
+	if !ifShardResponse {
+		reply.Err = ErrWrongGroup
+		return
+	}
+	if !ifShardAvailable {
+		reply.Err = ErrWrongLeader
+		return
+	}
+
+	op := Op{
+		Operation:         args.Op,
+		Key:               args.Key,
+		Value:             args.Value,
+		ClientId:          args.ClientId,
+		RequestId:         args.RequestId,
+		ConfigNum_MIGRATE: args.ConfigNum,
+	}
+	raftIndex, _, _ := kv.rf.Start(op)
+	channelRaftIndex := kv.getWaitChannel(raftIndex)
+
+	select {
+	case <-time.After(time.Millisecond * CONSENSUS_TIMEOUT):
+		if kv.ifRequestDuplicate(op.ClientId, op.RequestId, key2shard(op.Key)) {
+			reply.Err = OK
+		} else {
+			reply.Err = ErrWrongLeader
+		}
+	case raftCommitOp := <-channelRaftIndex:
+		ifResponse, ifAvailable := kv.CheckShardState(op.ConfigNum_MIGRATE, key2shard(op.Key))
+
+		if ifResponse &&
+			ifAvailable &&
+			raftCommitOp.ClientId == op.ClientId &&
+			raftCommitOp.RequestId == op.RequestId {
+			reply.Err = OK
+
+			//kv.mu.Lock()
+			//if args.Key == "2" {
+			//	fmt.Printf("%v: gid=%v in configNum=%v arg.configNum=%v PutAppend KVDBofShard=%v dupMap=%v\n",
+			//		kv.me, kv.gid, kv.config.Num, args.ConfigNum, kv.kvDB[shardIndex].KVDBOfShard, kv.kvDB[shardIndex].ClientRequestId)
+			//}
+			//kv.mu.Unlock()
+		} else {
+			reply.Err = ErrWrongLeader
+		}
+	}
+
+	kv.mu.Lock()
+	//close(kv.waitApplyChannel[raftIndex])
+	delete(kv.waitApplyChannel, raftIndex)
+	kv.mu.Unlock()
 }
 
-//
 // the tester calls Kill() when a ShardKV instance won't
 // be needed again. you are not required to do anything
 // in Kill(), but it might be convenient to (for example)
 // turn off debug output from this instance.
-//
 func (kv *ShardKV) Kill() {
+	atomic.StoreInt32(&kv.dead, 1)
 	kv.rf.Kill()
 	// Your code here, if desired.
+	close(kv.done)
 }
 
+func (kv *ShardKV) Killed() bool {
+	z := atomic.LoadInt32(&kv.dead)
+	return z == 1
+}
 
-//
 // servers[] contains the ports of the servers in this group.
 //
 // me is the index of the current server in servers[].
@@ -75,7 +270,6 @@ func (kv *ShardKV) Kill() {
 //
 // StartServer() must return quickly, so it should start goroutines
 // for any long-running work.
-//
 func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister, maxraftstate int, gid int, ctrlers []*labrpc.ClientEnd, make_end func(string) *labrpc.ClientEnd) *ShardKV {
 	// call labgob.Register on structures you want
 	// Go's RPC library to marshall/unmarshall.
@@ -89,6 +283,25 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	kv.ctrlers = ctrlers
 
 	// Your initialization code here.
+	kv.done = make(chan struct{})
+	kv.kvDB = make([]ShardComponent, NShards)
+
+	for shard := 0; shard < NShards; shard++ {
+		kv.kvDB[shard] = ShardComponent{
+			shard,
+			make(map[string]string),
+			make(map[int64]int),
+		}
+		kv.migratingShard[shard] = Normal
+	}
+
+	kv.mck = shardctrler.MakeClerk(kv.ctrlers)
+	kv.waitApplyChannel = make(map[int]chan Op)
+
+	snapshot := persister.ReadSnapshot()
+	if len(snapshot) > 0 {
+		kv.ReadSnapshotToInstall(snapshot)
+	}
 
 	// Use something like this to talk to the shardctrler:
 	// kv.mck = shardctrler.MakeClerk(kv.ctrlers)
@@ -96,6 +309,9 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 
+	go kv.ReadRaftApplyCommandLoop()
+	go kv.leaderMonitor(kv.PullNewConfigLoop, CONFIGCHECK_TIMEOUT*time.Millisecond)
+	go kv.leaderMonitor(kv.SendShardToOtherGroupLoop, SENDSHARDS_TIMEOUT*time.Millisecond)
 
 	return kv
 }

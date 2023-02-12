@@ -27,6 +27,7 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck.servers = servers
 	// You'll have to add code here.
 	ck.clientId = nrand()
+	ck.requestId = 0
 	ck.recentLeaderId = GetRandomServer(len(ck.servers))
 	return ck
 }

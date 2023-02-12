@@ -1,77 +1,65 @@
 package shardctrler
 
-import (
-	"fmt"
-)
-
-func ifReachBalanceSize(length int, subNum int, i int) bool {
+func ifGidNeedHoldMoreShards(length int, subNum int, i int) bool {
 	if i < length-subNum {
 		return true
 	}
 	return false
 }
 
-func sortGidNumArray(GidToShardNumMap map[int]int) []int {
-	length := len(GidToShardNumMap)
+func sortArray(Gid2ShardNumMap map[int]int) []int {
+	length := len(Gid2ShardNumMap)
 
-	numArray := make([]int, 0, length)
-	for gid, _ := range GidToShardNumMap {
-		numArray = append(numArray, gid)
+	orderedArray := make([]int, 0, length)
+	for gid, _ := range Gid2ShardNumMap {
+		orderedArray = append(orderedArray, gid)
 	}
 
 	// bubble sort
 	for i := 0; i < length-1; i++ {
 		for j := length - 1; j > i; j-- {
-			if GidToShardNumMap[numArray[j]] < GidToShardNumMap[numArray[j-1]] ||
-				(GidToShardNumMap[numArray[j]] == GidToShardNumMap[numArray[j-1]] &&
-					numArray[j] < numArray[j-1]) {
-				numArray[j], numArray[j-1] = numArray[j-1], numArray[j]
+			if Gid2ShardNumMap[orderedArray[j]] < Gid2ShardNumMap[orderedArray[j-1]] ||
+				(Gid2ShardNumMap[orderedArray[j]] == Gid2ShardNumMap[orderedArray[j-1]] &&
+					orderedArray[j] < orderedArray[j-1]) { // ensure the uniqueness of sorting
+				orderedArray[j], orderedArray[j-1] = orderedArray[j-1], orderedArray[j]
 			}
 		}
 	}
-	return numArray
+	return orderedArray
 }
 
 func (sc *ShardCtrler) reBalanceShards(
-	GidToShardNumMap map[int]int,
+	Gid2ShardNumMap map[int]int,
 	lastShards [NShards]int,
 ) [NShards]int {
-	length := len(GidToShardNumMap)
+	length := len(Gid2ShardNumMap)
 	average := NShards / length
-	subNum := NShards % length
-	realSortNum := sortGidNumArray(GidToShardNumMap)
+	shardNumNeedReset := NShards % length // the number of shards which doesn't need to reset gid
+	realSortNum := sortArray(Gid2ShardNumMap)
 
-	// reduce large shards
+	// decrease larger shards
 	for i := length - 1; i >= 0; i-- {
 		resultNum := average
-		if !ifReachBalanceSize(length, subNum, i) {
+		if !ifGidNeedHoldMoreShards(length, shardNumNeedReset, i) {
 			resultNum = average + 1
 		}
-		if resultNum < GidToShardNumMap[realSortNum[i]] {
+		if resultNum < Gid2ShardNumMap[realSortNum[i]] {
 			gidNum := realSortNum[i]
-			changeNum := GidToShardNumMap[gidNum] - resultNum
+			changeNum := Gid2ShardNumMap[gidNum] - resultNum
 			for shardIndex, gid := range lastShards {
 				if changeNum <= 0 {
 					break
 				}
 				if gid == gidNum {
-					lastShards[shardIndex] = 0 // make room for smaller shards in fellow for() loop
+					lastShards[shardIndex] = 0 // make room for smaller shards in fellow for{} loop
 					changeNum -= 1
 				}
 			}
-			GidToShardNumMap[gidNum] = resultNum
 		}
-	}
-
-	// increment smaller shards
-	for i := 0; i < length; i++ {
-		resultNum := average
-		if !ifReachBalanceSize(length, subNum, i) {
-			resultNum = average + 1
-		}
-		if resultNum > GidToShardNumMap[realSortNum[i]] {
+		// increase smaller shards
+		if resultNum > Gid2ShardNumMap[realSortNum[i]] {
 			gidNum := realSortNum[i]
-			changeNum := resultNum - GidToShardNumMap[gidNum]
+			changeNum := resultNum - Gid2ShardNumMap[gidNum]
 			for shardIndex, gid := range lastShards {
 				if changeNum <= 0 {
 					break
@@ -81,32 +69,31 @@ func (sc *ShardCtrler) reBalanceShards(
 					changeNum -= 1
 				}
 			}
-			GidToShardNumMap[gidNum] = resultNum
 		}
 	}
 	return lastShards
 }
 
-func (sc *ShardCtrler) MakeMoveConfig(shard int, gid int) *Config {
+func (sc *ShardCtrler) MakeMoveConfigL(shard int, gid int) *Config {
 	lastConfig := sc.configs[len(sc.configs)-1]
 	tempConfig := Config{
 		Num:    len(sc.configs),
 		Shards: [10]int{},
 		Groups: map[int][]string{},
 	}
-	for shards, gids := range lastConfig.Shards {
-		tempConfig.Shards[shards] = gids
+	for shardIndex, gidNum := range lastConfig.Shards {
+		tempConfig.Shards[shardIndex] = gidNum
 	}
 	tempConfig.Shards[shard] = gid
 
-	for gids, _servers := range lastConfig.Groups {
-		tempConfig.Groups[gids] = _servers
+	for gidIndex, serverList := range lastConfig.Groups {
+		tempConfig.Groups[gidIndex] = serverList
 	}
 
 	return &tempConfig
 }
 
-func (sc *ShardCtrler) MakeJoinConfig(servers map[int][]string) *Config {
+func (sc *ShardCtrler) MakeJoinConfigL(servers map[int][]string) *Config {
 	lastConfig := sc.configs[len(sc.configs)-1]
 	tempGroups := make(map[int][]string)
 
@@ -117,18 +104,18 @@ func (sc *ShardCtrler) MakeJoinConfig(servers map[int][]string) *Config {
 		tempGroups[gid] = serversList
 	}
 
-	GidToShardNumMap := make(map[int]int)
+	Gid2ShardNumMap := make(map[int]int)
 	for gid := range tempGroups {
-		GidToShardNumMap[gid] = 0
+		Gid2ShardNumMap[gid] = 0
 	}
 	for _, gid := range lastConfig.Shards {
 		if gid != 0 {
-			GidToShardNumMap[gid]++
+			Gid2ShardNumMap[gid]++
 		}
 	}
 
-	if len(GidToShardNumMap) == 0 {
-		fmt.Printf("%v: MakeJoinConfig GidToShardNumMap=0! tempGroups=%v\n", sc.me, tempGroups)
+	if len(Gid2ShardNumMap) == 0 {
+		//fmt.Printf("%v: MakeJoinConfig GidToShardNumMap=0! tempGroups=%v\n", sc.me, tempGroups)
 		return &Config{
 			Num:    len(sc.configs),
 			Shards: [10]int{},
@@ -138,12 +125,12 @@ func (sc *ShardCtrler) MakeJoinConfig(servers map[int][]string) *Config {
 
 	return &Config{
 		Num:    len(sc.configs),
-		Shards: sc.reBalanceShards(GidToShardNumMap, lastConfig.Shards),
+		Shards: sc.reBalanceShards(Gid2ShardNumMap, lastConfig.Shards),
 		Groups: tempGroups,
 	}
 }
 
-func (sc *ShardCtrler) MakeLeaveConfig(gids []int) *Config {
+func (sc *ShardCtrler) MakeLeaveConfigL(gids []int) *Config {
 	lastConfig := sc.configs[len(sc.configs)-1]
 	tempGroups := make(map[int][]string)
 
@@ -159,11 +146,11 @@ func (sc *ShardCtrler) MakeLeaveConfig(gids []int) *Config {
 		delete(tempGroups, gidLeave)
 	}
 
-	newShard := lastConfig.Shards
-	GidToShardNumMap := make(map[int]int)
+	newShard := lastConfig.Shards // just shallow copy
+	Gid2ShardNumMap := make(map[int]int)
 	for gid := range tempGroups {
 		if !ifLeaveSet[gid] {
-			GidToShardNumMap[gid] = 0
+			Gid2ShardNumMap[gid] = 0
 		}
 	}
 	for shard, gid := range lastConfig.Shards {
@@ -171,12 +158,12 @@ func (sc *ShardCtrler) MakeLeaveConfig(gids []int) *Config {
 			if ifLeaveSet[gid] {
 				newShard[shard] = 0
 			} else {
-				GidToShardNumMap[gid]++
+				Gid2ShardNumMap[gid]++
 			}
 		}
 	}
-	if len(GidToShardNumMap) == 0 {
-		fmt.Printf("%v: MakeLeaveConfig GidToShardNumMap=0! tempGroups=%v\n", sc.me, tempGroups)
+	if len(Gid2ShardNumMap) == 0 {
+		//fmt.Printf("%v: MakeLeaveConfig GidToShardNumMap=0! tempGroups=%v\n", sc.me, tempGroups)
 		return &Config{
 			Num:    len(sc.configs),
 			Shards: [10]int{},
@@ -186,7 +173,7 @@ func (sc *ShardCtrler) MakeLeaveConfig(gids []int) *Config {
 
 	return &Config{
 		Num:    len(sc.configs),
-		Shards: sc.reBalanceShards(GidToShardNumMap, newShard),
+		Shards: sc.reBalanceShards(Gid2ShardNumMap, newShard),
 		Groups: tempGroups,
 	}
 }

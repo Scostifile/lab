@@ -18,10 +18,8 @@ type InstallSnapshotReply struct {
 	Term int
 }
 
-//
 // A service wants to switch to snapshot.  Only do so if Raft hasn't
 // have more recent info since it communicate the snapshot on applyCh.
-//
 func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int, snapshot []byte) bool {
 
 	// Your code here (2D).
@@ -31,48 +29,50 @@ func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int,
 
 // the service says it has created a snapshot that has
 // all info up to and including index. this means the
-// service no longer needs the log through (and including)
-// that index. Raft should now trim its log as much as possible.
+// service no longer needs the Log through (and including)
+// that index. Raft should now trim its Log as much as possible.
 func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	// Your code here (2D).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	if rf.snapshotIndex >= index || rf.commitIndex < index || rf.log.lastindex() < index {
+	if rf.snapshotIndex >= index ||
+		rf.commitIndex < index {
 		if rf.log.lastindex() < index || rf.commitIndex < index {
-			log.Fatalf("%v: Snapshot log lastindex=%v < index=%v\n", rf.me, rf.log.lastindex(), index)
+			log.Fatalf("%v: Snapshot Entries lastindex=%v < index=%v\n", rf.me, rf.log.lastindex(), index)
 		}
 		return
 	}
+	//fmt.Printf("%v:Snapshot Entries ----begin----is: %v\n", rf.me, rf.Entries.Entries)
+	if index >= rf.log.lastindex()+1 {
+		rf.snapshotTerm = rf.log.entry(rf.log.lastindex()).Term
+		fmt.Printf("%v: Snapshot index=%v >= rfLogLastIndex=%v!!!!!!!!!!!!!!!!!!!!!!!1\n",
+			rf.me, index, rf.log.lastindex())
+	} else {
+		rf.snapshotTerm = rf.log.entry(index).Term
+	}
 
-	rf.snapshotTerm = rf.log.entry(index).Term
 	rf.snapshotIndex = index
 	rf.snapshot = snapshot
 
-	//fmt.Printf("%v: snapshot old rfloglen=%v\n", rf.me, len(rf.log.log))
-	tempLog := make([]Entry, rf.log.lastindex()-index+1) // len of log include snapshot
+	tempLog := make([]Entry, rf.log.lastindex()-index+1) // len of Entries include snapshot
 	copy(tempLog, rf.log.slice(index))
+	tempLog[0] = Entry{Term: rf.log.entry(index).Term, Command: nil} // fix lab4B shardDeletion test
 	rf.log = mkLog(tempLog, index)
-	//fmt.Printf("%v: Snapshot until index:%v, oldlastIncludeIndex:%v, oldlastIncludeTerm:%v temploglen:%v rfloglen:%v\n",
-	//	rf.me, index, rf.snapshotIndex, rf.snapshotTerm, len(tempLog), len(rf.log.log))
 
 	if index > rf.commitIndex {
 		rf.commitIndex = index
 		fmt.Printf("111111111111111111111111111\n")
 	}
 	if index > rf.lastApplied {
+		fmt.Printf("%v: Snapshot index=%v > lastApplied=%v!!\n", rf.me, index, rf.lastApplied)
 		rf.lastApplied = index
-		fmt.Printf("2222222222222222222222222222\n")
 	}
 	rf.persister.SaveStateAndSnapshot(rf.persistData(), snapshot)
-	//fmt.Printf("%v: snapshot lastincludeIndex:%v lastincludeTerm:%v\n", rf.me, rf.snapshotIndex, rf.snapshotTerm)
 }
 
 // InstallSnapshot RPC Handler
 func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
-	if rf.killed() {
-		return
-	}
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	defer func() {
@@ -107,12 +107,13 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 		index := args.LastIncludeIndex
 		tempLog := make([]Entry, rf.log.lastindex()-index+1)
 		copy(tempLog, rf.log.slice(index))
-		//fmt.Printf("%v: InstallSnapshot plus followe logs len:%v, log:%v\n", rf.me, len(tempLog), tempLog)
+		tempLog[0] = Entry{Term: rf.log.entry(index).Term, Command: nil} // fix lab4B shardDeletion test
+		//fmt.Printf("%v: InstallSnapshot plus follower logs len:%v, Entries:%v\n", rf.me, len(tempLog), tempLog)
 		rf.log = mkLog(tempLog, index)
 	} else {
 		rf.log = mkLog(make([]Entry, 1), args.LastIncludeIndex)
 		rf.log.entry(args.LastIncludeIndex).Term = args.LastIncludeTerm
-		//fmt.Printf("%v: InstallSnapshot with no follower log\n", rf.me)
+		//fmt.Printf("%v: InstallSnapshot with no follower Entries\n", rf.me)
 	}
 
 	rf.snapshot = args.Data
@@ -123,22 +124,25 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	rf.waitingIndex = args.LastIncludeIndex
 	rf.waitingTerm = args.LastIncludeTerm
 
-	//fmt.Printf("%v: InstallSnapshot end -------- lastincludeterm:%v==%v\n", rf.me, rf.log.entry(index).Term, rf.snapshotTerm)
+	//fmt.Printf("%v: InstallSnapshot end -------- lastincludeterm:%v==%v\n", rf.me, rf.Entries.entry(index).Term, rf.snapshotTerm)
 	rf.persister.SaveStateAndSnapshot(rf.persistData(), args.Data)
-	rf.signalApplierL()
 
 	if args.LastIncludeIndex > rf.commitIndex {
 		rf.commitIndex = args.LastIncludeIndex
 	}
-	//if args.LastIncludeIndex > rf.lastApplied {
-	//	rf.lastApplied = args.LastIncludeIndex
-	//}
 
 	/* wherever the lastIncludeIndex is bigger than lastApplied or not, it should update the lastApplied = lastIncludeIndex,
-	otherwise may cause the situation that s2's DB is {x 0 0 y x 0 1 y}, and append a new log entry "x 0 2 y", now its DB is {x 0 0 y x 0 1 y x 0 2 y},
-	then read a snapshot by leader so that s2's DB becomes {x 0 0 y x 0 1 y}. It causes the log rollback.
+	otherwise may cause the situation that s2's DB is {x 0 0 y x 0 1 y}, and append a new Entries entry "x 0 2 y", now its DB is {x 0 0 y x 0 1 y x 0 2 y},
+	then read a snapshot by leader so that s2's DB becomes {x 0 0 y x 0 1 y}. It causes the Entries rollback.
 	*/
+	if args.LastIncludeIndex < rf.lastApplied {
+		fmt.Printf("InstallSnapshot arg.lastIncludeIndex=%v < rf.lastApplied=%v\n", args.LastIncludeIndex, rf.lastApplied)
+	} else if args.LastIncludeIndex > rf.lastApplied {
+		//fmt.Printf("InstallSnapshot arg.lastIncludeIndex=%v > rf.lastApplied=%v\n", args.LastIncludeIndex, rf.lastApplied)
+	}
+
 	rf.lastApplied = args.LastIncludeIndex
+	rf.signalApplierL()
 }
 
 func (rf *Raft) sendSnapshot(server int, currentTerm int) {

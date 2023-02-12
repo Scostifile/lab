@@ -1,6 +1,6 @@
 # Architecture Diagram
 
-  ![total architecture](https://user-images.githubusercontent.com/81071995/218299338-14467c02-f435-4285-81e1-0e279d5d62b1.svg)
+![total architecture](https://user-images.githubusercontent.com/81071995/218312680-5c860a7c-9df1-4800-a905-daa6cb9d461c.svg)
 
 - [x] Sharded Key/Value Service
 
